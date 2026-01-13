@@ -1,14 +1,13 @@
 import discord
-from discord.ext import commands, tasks
-from dotenv import load_dotenv
+from discord.ext import commands
 import os
 import time
 import json
-from datetime import datetime
 
-# .env betöltése
-load_dotenv()
-TOKEN = os.getenv("DISCORD_TOKEN")
+# Discord token Railway Environment Variable-ból
+TOKEN = os.environ.get("DISCORD_TOKEN")
+if not TOKEN:
+    raise ValueError("A DISCORD_TOKEN nincs beállítva! Railway-en a Settings → Variables alatt add meg.")
 
 # Intents
 intents = discord.Intents.default()
@@ -28,129 +27,92 @@ def save_logs():
     with open(FILENAME, "w") as f:
         json.dump(duty_logs, f)
 
-# Segédfüggvény az óra:perc formátumhoz
+# Idő formázás
 def format_time(total_minutes):
     total_minutes = int(total_minutes)
     hours = total_minutes // 60
     minutes = total_minutes % 60
     return f"{hours}h {minutes}m"
 
-# Bot elindult
-@bot.event
-async def on_ready():
-    print(f'Bot elindult: {bot.user}')
-    daily_summary.start()  # indítjuk az ütemezett napi összesítést
+# Admin ellenőrzés
+def is_admin(ctx):
+    return ctx.author.guild_permissions.administrator
 
-# Szolgálat kezdete
-@bot.command()
-async def kezd(ctx):
+
+# ===== PARANCSOK =====
+
+@bot.command(name="kezdes")
+async def kezdes(ctx):
     user_id = str(ctx.author.id)
-    today = datetime.now().strftime("%Y-%m-%d")
 
-    if user_id not in duty_logs:
-        duty_logs[user_id] = {}
-
-    duty_logs[user_id]["start"] = time.time()
-    duty_logs[user_id]["today"] = today
-    save_logs()
-    await ctx.send(f"{ctx.author.mention} szolgálatot kezdett!")
-
-# Szolgálat vége
-@bot.command()
-async def vege(ctx):
-    user_id = str(ctx.author.id)
     if user_id in duty_logs and "start" in duty_logs[user_id]:
-        duration_seconds = time.time() - duty_logs[user_id]["start"]
-        duration_minutes = int(duration_seconds // 60)
-        date = duty_logs[user_id]["today"]
-
-        if date not in duty_logs[user_id]:
-            duty_logs[user_id][date] = 0
-
-        duty_logs[user_id][date] += duration_minutes
-        duty_logs[user_id].pop("start")
-        duty_logs[user_id].pop("today")
-        save_logs()
-        await ctx.send(f"{ctx.author.mention} szolgálatot befejezte. Munkaidő: {format_time(duration_minutes)}")
-    else:
-        await ctx.send(f"{ctx.author.mention} nem volt szolgálatban!")
-
-# Egyéni munkaidő napokra bontva
-@bot.command()
-async def status(ctx):
-    user_id = str(ctx.author.id)
-    if user_id not in duty_logs:
-        await ctx.send(f"{ctx.author.mention} nincs rögzített munkaidőd.")
+        await ctx.send("❌ Már aktív műszakban vagy.")
         return
 
-    message = f"{ctx.author.mention} munkaideje napokra bontva:\n"
-    for date, minutes in duty_logs[user_id].items():
-        if date in ["start", "today"]:
-            continue
-        message += f"{date}: {format_time(minutes)}\n"
-    await ctx.send(message)
+    duty_logs.setdefault(user_id, {})
+    duty_logs[user_id]["start"] = time.time()
+    save_logs()
 
-# Minden felhasználó napokra bontott munkaideje
-@bot.command()
-async def list_all(ctx):
-    if not duty_logs:
-        await ctx.send("Nincs rögzített munkaidő!")
+    await ctx.send(f"🟢 **Műszak elkezdve:** {ctx.author.mention}")
+
+
+@bot.command(name="vege")
+async def vege(ctx, member: discord.Member = None):
+    # Saját vagy admin másé
+    if member is None:
+        member = ctx.author
+    elif member != ctx.author and not is_admin(ctx):
+        await ctx.send("⛔ Más műszakját csak admin zárhatja le.")
         return
 
-    message = "Összes felhasználó munkaideje napokra bontva:\n"
-    for user_id, data in duty_logs.items():
-        try:
-            user = await bot.fetch_user(int(user_id))
-            message += f"{user.mention}:\n"
-            for date, minutes in data.items():
-                if date in ["start", "today"]:
-                    continue
-                message += f"  {date}: {format_time(minutes)}\n"
-        except:
-            message += f"{user_id}: hiba a név lekérésénél\n"
-
-    await ctx.send(message)
-
-# Admin parancs: clean @user
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def clean(ctx, member: discord.Member):
     user_id = str(member.id)
-    if user_id in duty_logs:
-        duty_logs.pop(user_id)
-        save_logs()
-        await ctx.send(f"{member.mention} összes munkaidejét töröltem.")
-    else:
-        await ctx.send(f"{member.mention}-nek nincs rögzített munkaideje.")
 
-# Hibakezelés clean parancshoz
-@clean.error
-async def clean_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send(f"{ctx.author.mention} nincs jogosultságod a parancs használatához!")
-        
-# Napi összesítés küldése 00:01-kor
-@tasks.loop(minutes=1)
-async def daily_summary():
-    now = datetime.now()
-    # Ha pontosan 00:01, akkor küldjük az összesítést
-    if now.hour == 0 and now.minute == 1:
-        # Csatorna neve
-        channel_name = "munkaidö-log"
-        # Megkeressük a csatornát minden guildban
-        for guild in bot.guilds:
-            channel = discord.utils.get(guild.text_channels, name=channel_name)
-            if channel:
-                message = f"Napi munkaidő összesítés ({now.strftime('%Y-%m-%d')}):\n"
-                for user_id, data in duty_logs.items():
-                    try:
-                        user = await bot.fetch_user(int(user_id))
-                        # Csak az adott napot jelenítjük
-                        day_minutes = data.get(now.strftime('%Y-%m-%d'), 0)
-                        message += f"{user.mention}: {format_time(day_minutes)}\n"
-                    except:
-                        continue
-                await channel.send(message)
+    if user_id not in duty_logs or "start" not in duty_logs[user_id]:
+        await ctx.send(f"❌ {member.mention} nincs aktív műszakban.")
+        return
 
-# Bot futtatása
+    start_time = duty_logs[user_id]["start"]
+    worked_minutes = (time.time() - start_time) / 60
+
+    duty_logs[user_id]["total"] = duty_logs[user_id].get("total", 0) + worked_minutes
+    duty_logs[user_id].pop("start")
+
+    save_logs()
+
+    await ctx.send(
+        f"✅ **Műszak lezárva:** {member.mention}\n"
+        f"⏱ Ledolgozott idő: **{format_time(worked_minutes)}**"
+    )
+
+
+@bot.command(name="clean")
+async def clean(ctx, target: discord.Role = None):
+    if not is_admin(ctx):
+        await ctx.send("⛔ Ehhez a parancshoz rendszergazda jogosultság kell.")
+        return
+
+    if target != ctx.guild.default_role:
+        await ctx.send("Használat: `/clean @everyone`")
+        return
+
+    duty_logs.clear()
+    save_logs()
+
+    await ctx.send("🧹 **Minden felhasználó munkaideje nullázva lett.**")
+
+
+@bot.command(name="ido")
+async def ido(ctx, member: discord.Member = None):
+    if member is None:
+        member = ctx.author
+
+    user_id = str(member.id)
+    total = duty_logs.get(user_id, {}).get("total", 0)
+
+    await ctx.send(
+        f"⏱ **{member.mention} összes munkaideje:** {format_time(total)}"
+    )
+
+
+# ===== BOT INDÍTÁS =====
 bot.run(TOKEN)
