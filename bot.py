@@ -15,7 +15,7 @@ def home():
     return "Bot fut!"
 
 def run():
-    app.run(host="0.0.0.0", port=8080)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
 # Indítjuk külön szálon, hogy a bot fusson mellette
 t = Thread(target=run)
@@ -30,7 +30,7 @@ if not TOKEN:
 
 # Intents
 intents = discord.Intents.default()
-intents.members = True  # kell a !reg-hez, ha nevet módosítunk
+intents.members = True  # kell a !reg-hez
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
