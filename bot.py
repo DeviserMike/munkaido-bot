@@ -39,7 +39,7 @@ def is_admin(ctx):
     return ctx.author.guild_permissions.administrator
 
 # ===== MUNKAIDŐ PARANCSOK =====
-@bot.command(name="kezdes")
+@bot.command(name="kezd")
 async def kezdes(ctx):
     user_id = str(ctx.author.id)
     if user_id in duty_logs and "start" in duty_logs[user_id]:
