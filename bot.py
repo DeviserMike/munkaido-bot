@@ -1,20 +1,45 @@
 import discord
 import os
 import time
+import threading
+from flask import Flask
 
+# ======= FLASK KEEP-ALIVE =======
+app = Flask("")
+
+@app.route("/")
+def home():
+    return "Bot fut!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+# Flask külön szálon
+threading.Thread(target=run_flask).start()
+
+# ======= DISCORD BOT =======
 TOKEN = os.environ.get("DISCORD_TOKEN")
 if not TOKEN:
     raise ValueError("DISCORD_TOKEN nincs beállítva!")
 
 intents = discord.Intents.default()
+intents.members = True  # Szükséges a nick változtatáshoz
 intents.messages = True
 intents.guilds = True
-intents.members = True  # Szükséges a nick változtatáshoz
 
 client = discord.Client(intents=intents)
 
+# Munkaidő log
 duty_logs = {}
 
+# ======= HELPER =======
+def format_time(total_minutes):
+    total_minutes = int(total_minutes)
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    return f"{hours}h {minutes}m"
+
+# ======= BOT EVENTS =======
 @client.event
 async def on_ready():
     print(f"Bot csatlakozott: {client.user} ({client.user.id})")
@@ -51,7 +76,10 @@ async def on_message(message):
         start_time = duty_logs[user_id]["start"]
         worked_minutes = (time.time() - start_time) / 60
         duty_logs[user_id].pop("start")
-        await message.channel.send(f"✅ Műszak lezárva: {message.author.mention}\n⏱ Ledolgozott idő: {int(worked_minutes)} perc")
+        duty_logs[user_id]["total"] = duty_logs[user_id].get("total", 0) + worked_minutes
+        await message.channel.send(
+            f"✅ Műszak lezárva: {message.author.mention}\n⏱ Ledolgozott idő: {int(worked_minutes)} perc"
+        )
         return
 
     # Regisztráció
@@ -69,4 +97,38 @@ async def on_message(message):
             await message.channel.send("❌ Nem sikerült átnevezni. Ellenőrizd a bot engedélyeit.")
         return
 
+    # Admin törlés
+    if content == "!delete all":
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("⛔ Csak admin használhatja.")
+            return
+        duty_logs.clear()
+        await message.channel.send("🧹 Minden felhasználó munkaideje törölve lett!")
+        return
+
+    # Munkaidő lista (admin csak)
+    if content == "!list all":
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("⛔ Csak admin használhatja.")
+            return
+
+        if not duty_logs:
+            await message.channel.send("📋 Nincs még rögzített munkaidő.")
+            return
+
+        msg = "📋 **Munkaidő lista:**\n"
+        for uid, data in duty_logs.items():
+            member_name = str(uid)
+            try:
+                member = await message.guild.fetch_member(int(uid))
+                member_name = member.display_name
+            except:
+                pass
+            total = int(data.get("total", 0))
+            msg += f"- {member_name}: {total} perc\n"
+
+        await message.channel.send(msg)
+        return
+
+# ======= BOT INDÍTÁS =======
 client.run(TOKEN)
