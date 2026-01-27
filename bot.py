@@ -5,16 +5,15 @@ import time
 import json
 from math import ceil
 
-# Discord token Railway Environment Variable-ból
+# Token
 TOKEN = os.environ.get("DISCORD_TOKEN")
 if not TOKEN:
-    raise ValueError("A DISCORD_TOKEN nincs beállítva! Railway-en a Settings → Variables alatt add meg.")
+    raise ValueError("A DISCORD_TOKEN nincs beállítva!")
 
-# Intents (member és message content kell a !reg-hez és parancsokhoz)
+# Intents
 intents = discord.Intents.default()
+intents.members = True  # FONTOS: regisztrációhoz
 intents.message_content = True
-intents.members = True
-
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # JSON fájl
@@ -25,54 +24,47 @@ if os.path.exists(FILENAME):
 else:
     duty_logs = {}
 
-# Mentés
 def save_logs():
     with open(FILENAME, "w") as f:
         json.dump(duty_logs, f)
 
-# Idő formázás
 def format_time(total_minutes):
     total_minutes = int(total_minutes)
     hours = total_minutes // 60
     minutes = total_minutes % 60
     return f"{hours}h {minutes}m"
 
-# Admin ellenőrzés
 def is_admin(ctx):
     return ctx.author.guild_permissions.administrator
 
-# ===== PARANCSOK =====
-
-# Regisztráció: !reg vezetéknév keresztnév
+# ===== REGISZTRÁCIÓ =====
 @bot.command(name="reg")
-async def reg(ctx, vezetek: str, kereszt: str):
-    user_id = str(ctx.author.id)
-    
-    duty_logs.setdefault(user_id, {})
-    duty_logs[user_id]["name"] = f"{ctx.author.display_name} // {vezetek} {kereszt}"
-    save_logs()
-    
-    await ctx.send(f"✅ **Név frissítve:** {duty_logs[user_id]['name']}")
+async def reg(ctx, vezeteknev: str, keresztnev: str):
+    member = ctx.author
+    try:
+        new_name = f"{member.name} // {vezeteknev} {keresztnev}"
+        await member.edit(nick=new_name)
+        await ctx.send(f"✅ Neved átírva: **{new_name}**")
+    except discord.Forbidden:
+        await ctx.send("⛔ Nincs jogom a név megváltoztatásához!")
+    except discord.HTTPException:
+        await ctx.send("❌ Valami hiba történt a név módosításakor.")
 
-# Műszak kezdése: !kezd
+# ===== MŰSZAK KEZDÉS =====
 @bot.command(name="kezd")
 async def kezd(ctx):
     user_id = str(ctx.author.id)
-    
     if user_id in duty_logs and "start" in duty_logs[user_id]:
         await ctx.send("❌ Már aktív műszakban vagy.")
         return
-
     duty_logs.setdefault(user_id, {})
     duty_logs[user_id]["start"] = time.time()
     save_logs()
-
     await ctx.send(f"🟢 **Műszak elkezdve:** {ctx.author.mention}")
 
-# Műszak vége: !vege
+# ===== MŰSZAK VÉGE =====
 @bot.command(name="vege")
 async def vege(ctx, member: discord.Member = None):
-    # Saját vagy admin másé
     if member is None:
         member = ctx.author
     elif member != ctx.author and not is_admin(ctx):
@@ -80,68 +72,48 @@ async def vege(ctx, member: discord.Member = None):
         return
 
     user_id = str(member.id)
-
     if user_id not in duty_logs or "start" not in duty_logs[user_id]:
         await ctx.send(f"❌ {member.mention} nincs aktív műszakban.")
         return
 
     start_time = duty_logs[user_id]["start"]
     worked_minutes = (time.time() - start_time) / 60
-
     duty_logs[user_id]["total"] = duty_logs[user_id].get("total", 0) + worked_minutes
     duty_logs[user_id].pop("start")
-
     save_logs()
-
     await ctx.send(
         f"✅ **Műszak lezárva:** {member.mention}\n"
         f"⏱ Ledolgozott idő: **{format_time(worked_minutes)}**"
     )
 
-# Admin parancs: !delete all
-@bot.command(name="delete")
-async def delete(ctx, action: str = None):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Ehhez a parancshoz rendszergazda jogosultság kell.")
-        return
+# ===== ÖSSZES MUNKAIDŐ =====
+@bot.command(name="ido")
+async def ido(ctx, member: discord.Member = None):
+    if member is None:
+        member = ctx.author
+    user_id = str(member.id)
+    total = duty_logs.get(user_id, {}).get("total", 0)
+    await ctx.send(f"⏱ **{member.mention} összes munkaideje:** {format_time(total)}")
 
-    if action != "all":
-        await ctx.send("Használat: `!delete all`")
-        return
-
-    duty_logs.clear()
-    save_logs()
-
-    await ctx.send("🧹 **Minden felhasználó munkaideje törölve lett.**")
-
-# Admin parancs: !list all
+# ===== LISTA =====
 @bot.command(name="list")
 async def list_all(ctx, action: str = None):
     if action != "all":
         await ctx.send("Használat: `!list all`")
         return
-
-    # Összegyűjti az összes felhasználót és idejüket
     user_times = []
     for user_id, data in duty_logs.items():
         total = data.get("total", 0)
-        name = data.get("name", f"User {user_id}")
         if total > 0:
             try:
                 member = await ctx.guild.fetch_member(int(user_id))
-                display_name = data.get("name", member.display_name)
-                user_times.append((display_name, total))
+                user_times.append((member.display_name, total))
             except:
-                user_times.append((name, total))
-
-    # Rendezés csökkenő idő szerint
+                user_times.append((f"User {user_id}", total))
     user_times.sort(key=lambda x: x[1], reverse=True)
-
     if not user_times:
         await ctx.send("📋 **Nincs még rögzített munkaidő.**")
         return
-
-    # Embed oldalanként (10 felhasználó oldalanként)
     items_per_page = 10
     total_pages = ceil(len(user_times) / items_per_page)
     current_page = 0
@@ -150,17 +122,14 @@ async def list_all(ctx, action: str = None):
         start_idx = page_num * items_per_page
         end_idx = min(start_idx + items_per_page, len(user_times))
         page_users = user_times[start_idx:end_idx]
-
         embed = discord.Embed(
             title="📋 Munkaidő Lista",
             description=f"**Összes felhasználó:** {len(user_times)}\n**Oldal:** {page_num + 1}/{total_pages}",
             color=discord.Color.blue()
         )
-
         description_text = ""
         for idx, (name, total_minutes) in enumerate(page_users, start=start_idx + 1):
             description_text += f"**{idx}.** {name} - `{format_time(total_minutes)}`\n"
-
         embed.description += f"\n\n{description_text}"
         embed.set_footer(text="Használd a ⬅️ ➡️ reakciókat az oldalak közötti váltáshoz")
         return embed
@@ -193,9 +162,23 @@ async def list_all(ctx, action: str = None):
                 pass
             break
 
-# ===== BOT INDÍTÁS =====
+# ===== TÖRLÉS (ADMIN) =====
+@bot.command(name="delete")
+async def delete(ctx, action: str = None):
+    if not is_admin(ctx):
+        await ctx.send("⛔ Ehhez a parancshoz rendszergazda jogosultság kell.")
+        return
+    if action != "all":
+        await ctx.send("Használat: `!delete all`")
+        return
+    duty_logs.clear()
+    save_logs()
+    await ctx.send("🧹 **Minden felhasználó munkaideje törölve lett.**")
+
+# ===== BOT READY =====
 @bot.event
 async def on_ready():
     print(f"Bot csatlakozott: {bot.user} ({bot.user.id})")
 
+# ===== BOT INDÍTÁS =====
 bot.run(TOKEN)
