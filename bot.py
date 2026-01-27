@@ -9,10 +9,10 @@ TOKEN = os.environ.get("DISCORD_TOKEN")
 if not TOKEN:
     raise ValueError("A DISCORD_TOKEN nincs beállítva! Railway-en a Settings → Variables alatt add meg.")
 
-# Intents
+# Intents (members intent kötelező az on_member_join-hoz)
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True  # Szükséges belépés figyeléséhez
+intents.members = True  # KELL a belépés figyeléséhez
 bot = commands.Bot(command_prefix='/', intents=intents)
 
 # ===== MUNKAIDŐ JSON =====
@@ -112,7 +112,7 @@ def save_registered():
 # Üdvözlés belépéskor
 @bot.event
 async def on_member_join(member):
-    channel = discord.utils.get(member.guild.text_channels, name="📢welcome")  # csatorna neve
+    channel = discord.utils.get(member.guild.text_channels, name="📢welcome")
     if channel:
         await channel.send(
             f"👋 Üdv a szerveren, {member.mention}!\n"
@@ -121,9 +121,14 @@ async def on_member_join(member):
             "Példa: `/reg John Deer`"
         )
 
-# RP név parancs (egyszer használható)
+# RP név parancs (csak egyszer és csak a 📢welcome csatornában)
 @bot.command(name="reg")
 async def reg(ctx, vezeteknev: str = None, keresztnev: str = None):
+    # Csak a 📢welcome csatornában működjön
+    if ctx.channel.name != "📢welcome":
+        await ctx.send("❌ Ezt a parancsot csak a #📢welcome csatornában használhatod.")
+        return
+
     user_id = str(ctx.author.id)
     if user_id in registered:
         await ctx.send("❌ Már regisztráltad az RP nevedet, ezt a parancsot csak egyszer lehet használni.")
