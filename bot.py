@@ -12,8 +12,8 @@ if not TOKEN:
 
 # ===== INTENTS =====
 intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
+intents.message_content = True  # kell a parancsokhoz
+intents.members = True  # kell a nick módosításhoz
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
@@ -35,6 +35,11 @@ def format_time(minutes):
 
 def is_admin(ctx):
     return ctx.author.guild_permissions.administrator
+
+# ===== TESZT PARANCS =====
+@bot.command()
+async def teszt(ctx):
+    await ctx.send("✅ A bot működik és reagál!")
 
 # ===== MUNKAIDŐ PARANCSOK =====
 @bot.command()
@@ -109,9 +114,7 @@ async def reg(ctx, vezeteknev=None, keresztnev=None):
     if not vezeteknev or not keresztnev:
         return await ctx.send("Használat: !reg Vezetéknév Keresztnév")
 
-    # alap név (ha már van //, azt eltávolítjuk)
     base_name = ctx.author.display_name.split("//")[0].strip()
-
     new_nick = f"{base_name} // {vezeteknev} {keresztnev}"
 
     try:
