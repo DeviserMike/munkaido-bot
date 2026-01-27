@@ -2,22 +2,24 @@ import discord
 from discord.ext import commands
 import os
 
-# Token a Railway környezetből
 TOKEN = os.environ.get("DISCORD_TOKEN")
 if not TOKEN:
-    raise ValueError("A DISCORD_TOKEN nincs beállítva!")
+    raise ValueError("DISCORD_TOKEN nincs beállítva!")
 
-# Intents beállítása
-intents = discord.Intents.default()
-intents.message_content = True  # Kötelező a parancsokhoz
-intents.members = True  # Kell a !reg parancshoz
+# Mindent engedélyezünk explicit
+intents = discord.Intents.all()
 
-# Bot létrehozása
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# ===== DEBUG READY =====
+@bot.event
+async def on_ready():
+    print(f"Bot csatlakozott: {bot.user} ({bot.user.id})")
 
 # ===== TESZT PARANCS =====
 @bot.command()
 async def teszt(ctx):
+    print(f"Parancs kapva: {ctx.author} írta: {ctx.message.content}")
     await ctx.send(f"✅ Üzeneted látva: {ctx.author.mention}")
 
 # ===== MŰSZAK PARANCSOK =====
@@ -44,7 +46,7 @@ async def vege(ctx):
     duty_logs[user_id].pop("start")
     await ctx.send(f"✅ Műszak lezárva: {ctx.author.mention}\n⏱ Ledolgozott idő: {int(worked_minutes)} perc")
 
-# ===== REGISZTRÁCIÓ PARANCS =====
+# ===== REGISZTRÁCIÓ =====
 @bot.command()
 async def reg(ctx, vezetek: str, kereszt: str):
     new_name = f"{ctx.author.display_name} // {vezetek} {kereszt}"
@@ -54,5 +56,4 @@ async def reg(ctx, vezetek: str, kereszt: str):
     except:
         await ctx.send("❌ Nem sikerült átnevezni. Ellenőrizd a bot engedélyeit.")
 
-# ===== BOT INDÍTÁS =====
 bot.run(TOKEN)
