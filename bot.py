@@ -54,9 +54,16 @@ def is_admin(ctx):
 
 def parse_time(value: str):
     value = value.lower().replace(",", ".")
-    if value.endswith("h"):
-        return float(value[:-1]) * 60
-    return float(value)
+    total_minutes = 0
+    parts = value.split()
+    for part in parts:
+        if part.endswith("h"):
+            total_minutes += float(part[:-1]) * 60
+        elif part.endswith("m"):
+            total_minutes += float(part[:-1])
+        else:
+            total_minutes += float(part)
+    return total_minutes
 
 # ===== SZOLGÁLATI GOMBOS VIEW =====
 class ServiceView(discord.ui.View):
@@ -131,66 +138,9 @@ async def szoli(ctx):
         description += f"• {member.mention}\n"
     await ctx.send(f"🍔 **Szolgálatban lévők:**\n{description}")
 
-# ===== MŰSZAK =====
-@bot.command(name="kezd")
-async def kezd(ctx):
-    uid = str(ctx.author.id)
-    if uid in duty_logs and "start" in duty_logs[uid]:
-        await ctx.send("❌ Már aktív műszakban vagy.")
-        return
-    duty_logs.setdefault(uid, {})
-    duty_logs[uid]["start"] = time.time()
-    save_logs()
-    await ctx.send(f"🟢 **Műszak elkezdve:** {ctx.author.mention}")
-
-@bot.command(name="forcekezdes")
-async def forcekezdes(ctx, member: discord.Member):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell.")
-        return
-    uid = str(member.id)
-    if uid in duty_logs and "start" in duty_logs[uid]:
-        await ctx.send(f"❌ {member.mention} már műszakban van.")
-        return
-    duty_logs.setdefault(uid, {})
-    duty_logs[uid]["start"] = time.time()
-    save_logs()
-    await ctx.send(f"🟢 **Admin szolgálatba állította:** {member.mention}")
-
-@bot.command(name="vege")
-async def vege(ctx, member: discord.Member = None):
-    member = member or ctx.author
-    if member != ctx.author and not is_admin(ctx):
-        await ctx.send("⛔ Csak admin zárhatja le más műszakát.")
-        return
-    uid = str(member.id)
-    if uid not in duty_logs or "start" not in duty_logs[uid]:
-        await ctx.send(f"❌ {member.mention} nincs aktív műszakban.")
-        return
-    worked = (time.time() - duty_logs[uid]["start"]) / 60
-    duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
-    duty_logs[uid].pop("start")
-    save_logs()
-    await ctx.send(f"✅ **Műszak lezárva:** {member.mention}\n⏱ Ledolgozott idő: **{format_time(worked)}**")
-
-@bot.command(name="forcevege")
-async def forcevege(ctx, member: discord.Member):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell.")
-        return
-    uid = str(member.id)
-    if uid not in duty_logs or "start" not in duty_logs[uid]:
-        await ctx.send(f"❌ {member.mention} nincs aktív műszakban.")
-        return
-    worked = (time.time() - duty_logs[uid]["start"]) / 60
-    duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
-    duty_logs[uid].pop("start")
-    save_logs()
-    await ctx.send(f"🛑 **Admin lezárta a műszakot:** {member.mention}\n⏱ Hozzáadott idő: **{format_time(worked)}**")
-
 # ===== IDŐ HOZZÁADÁS / LEVONÁS =====
 @bot.command(name="hozzaad")
-async def hozzaad(ctx, member: discord.Member, amount: str):
+async def hozzaad(ctx, member: discord.Member, *, amount: str):
     if not is_admin(ctx):
         await ctx.send("⛔ Admin jog kell.")
         return
@@ -202,7 +152,7 @@ async def hozzaad(ctx, member: discord.Member, amount: str):
     await ctx.send(f"➕ **Hozzáadva:** {member.mention} ({format_time(minutes)})")
 
 @bot.command(name="levon")
-async def levon(ctx, member: discord.Member, amount: str):
+async def levon(ctx, member: discord.Member, *, amount: str):
     if not is_admin(ctx):
         await ctx.send("⛔ Admin jog kell.")
         return
