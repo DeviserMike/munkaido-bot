@@ -214,10 +214,15 @@ async def list_all(ctx, action: str = None):
         await ctx.send("📋 Nincs rögzített munkaidő.")
         return
 
-    embed = discord.Embed(title="📋 Munkaidő Lista", color=discord.Color.blurple())
+    description_text = ""
     for idx, (name, total_minutes) in enumerate(user_times, start=1):
-        embed.add_field(name=f"{idx}. {name}", value=format_time(total_minutes), inline=True)
+        description_text += f"**{idx}. {name}** - {format_time(total_minutes)}\n"
+
+    embed = discord.Embed(title="📋 Munkaidő Lista", description=description_text, color=discord.Color.blurple())
     await ctx.send(embed=embed)
+
+    # Összesített idő külön üzenetként
+    await ctx.send(f"⏱ **Összesen mindenki ledolgozott idő:** {format_time(total_worked)}")
 
     # Üzenet prompt az órabérhez (csak admin)
     await ctx.send(f"{ctx.author.mention}, írd be a mai órabért $-ban (pl. 15):")
@@ -236,7 +241,7 @@ async def list_all(ctx, action: str = None):
     for name, total_minutes in user_times:
         hours = total_minutes / 60
         pay = round(hours * rate)
-        payment_embed.add_field(name=name, value=f"${pay}", inline=True)
+        payment_embed.add_field(name=name, value=f"${pay}", inline=False)
     payment_embed.set_footer(text=f"Összes ledolgozott idő: {format_time(total_worked)}")
     await ctx.send(embed=payment_embed)
 
