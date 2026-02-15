@@ -117,30 +117,6 @@ class ServiceView(discord.ui.View):
 
         await interaction.response.send_message(f"🍔 Szolgálat leadva! Ledolgozott idő: {format_time(worked)}", ephemeral=True)
 
-# ===== MODAL ÓRABÉR =====
-class HourlyRateModal(discord.ui.Modal):
-    def __init__(self, user_times, total_worked):
-        super().__init__(title="Mai órabér")
-        self.user_times = user_times
-        self.total_worked = total_worked
-        self.rate_input = discord.ui.TextInput(label="Írd be a mai órabért $-ban:", placeholder="pl. 15", required=True)
-        self.add_item(self.rate_input)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            rate = float(self.rate_input.value)
-        except:
-            await interaction.response.send_message("⛔ Nem érvényes szám.", ephemeral=True)
-            return
-
-        payment_embed = discord.Embed(title="💵 Fizetés lista", color=discord.Color.gold())
-        for name, total_minutes in self.user_times:
-            hours = total_minutes / 60
-            pay = round(hours * rate)
-            payment_embed.add_field(name=name, value=f"${pay}", inline=True)
-        payment_embed.set_footer(text=f"Összes ledolgozott idő: {format_time(self.total_worked)}")
-        await interaction.response.send_message(embed=payment_embed)
-
 # ===== BOT READY =====
 @bot.event
 async def on_ready():
@@ -214,7 +190,7 @@ async def levon(ctx, member: discord.Member, *, amount: str):
     embed = discord.Embed(description=f"➖ Levonva: {member.mention} ({format_time(minutes)})", color=discord.Color.red())
     await ctx.send(embed=embed)
 
-# ===== LISTA ÉS FIZETÉS =====
+# ===== LISTA ÉS FIZETÉS ÜZENET ALAPÚ PROMPT =====
 @bot.command(name="list")
 async def list_all(ctx, action: str = None):
     if action != "all":
@@ -243,8 +219,26 @@ async def list_all(ctx, action: str = None):
         embed.add_field(name=f"{idx}. {name}", value=format_time(total_minutes), inline=True)
     await ctx.send(embed=embed)
 
-    # Modal a fizetéshez
-    await ctx.send_modal(HourlyRateModal(user_times, total_worked))
+    # Üzenet prompt az órabérhez (csak admin)
+    await ctx.send(f"{ctx.author.mention}, írd be a mai órabért $-ban (pl. 15):")
+
+    def check(m):
+        return m.author == ctx.author and m.channel == ctx.channel
+
+    try:
+        msg = await bot.wait_for("message", check=check, timeout=60)
+        rate = float(msg.content)
+    except:
+        await ctx.send("⛔ Érvénytelen szám vagy lejárt az idő.")
+        return
+
+    payment_embed = discord.Embed(title="💵 Fizetés lista", color=discord.Color.gold())
+    for name, total_minutes in user_times:
+        hours = total_minutes / 60
+        pay = round(hours * rate)
+        payment_embed.add_field(name=name, value=f"${pay}", inline=True)
+    payment_embed.set_footer(text=f"Összes ledolgozott idő: {format_time(total_worked)}")
+    await ctx.send(embed=payment_embed)
 
 # ===== FORCE KEZD / VEGE =====
 @bot.command(name="forcekezd")
