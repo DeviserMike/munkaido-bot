@@ -29,8 +29,9 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ===== SZOLGÁLATI BEÁLLÍTÁSOK =====
-SERVICE_CHANNEL_ID = 1455619759340257300
-SERVICE_ROLE_ID = 1472388518914428928
+SERVICE_CHANNEL_ID = 1455619759340257300  # panel csatorna
+SERVICE_ROLE_ID = 1472388518914428928     # szolgálatban rang
+LOG_CHANNEL_ID = 1472403885246255175      # log csatorna
 
 # ===== JSON FÁJL =====
 FILENAME = "duty_logs.json"
@@ -78,6 +79,18 @@ class ServiceView(discord.ui.View):
             await interaction.response.send_message("❌ Már szolgálatban vagy.", ephemeral=True)
             return
         await member.add_roles(role)
+
+        # Log start idő
+        uid = str(member.id)
+        duty_logs.setdefault(uid, {})
+        duty_logs[uid]["start"] = time.time()
+        save_logs()
+
+        # Log csatornába
+        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            await log_channel.send(f"🟢 {member.mention} szolgálatba állt!")
+
         await interaction.response.send_message("🍔 Szolgálatba álltál!", ephemeral=True)
 
     @discord.ui.button(label="Szolgálat leadása", emoji="🍔", style=discord.ButtonStyle.danger, custom_id="stop_service")
@@ -88,7 +101,23 @@ class ServiceView(discord.ui.View):
             await interaction.response.send_message("❌ Nem vagy szolgálatban.", ephemeral=True)
             return
         await member.remove_roles(role)
-        await interaction.response.send_message("🍔 Szolgálat leadva!", ephemeral=True)
+
+        # Munkaidő számítás
+        uid = str(member.id)
+        if uid in duty_logs and "start" in duty_logs[uid]:
+            worked = (time.time() - duty_logs[uid]["start"]) / 60  # percben
+            duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
+            duty_logs[uid].pop("start")
+            save_logs()
+        else:
+            worked = 0
+
+        # Log csatornába
+        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            await log_channel.send(f"🛑 {member.mention} leadta a szolgálatot! Ledolgozott idő: {format_time(worked)}")
+
+        await interaction.response.send_message(f"🍔 Szolgálat leadva! Ledolgozott idő: {format_time(worked)}", ephemeral=True)
 
 # ===== BOT READY =====
 @bot.event
