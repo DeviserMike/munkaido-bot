@@ -87,7 +87,8 @@ class ServiceView(discord.ui.View):
 
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
-            await log_channel.send(f"🟢 {member.mention} szolgálatba állt!")
+            embed = discord.Embed(description=f"🟢 {member.mention} szolgálatba állt!", color=discord.Color.green())
+            await log_channel.send(embed=embed)
 
         await interaction.response.send_message("🍔 Szolgálatba álltál!", ephemeral=True)
 
@@ -111,9 +112,33 @@ class ServiceView(discord.ui.View):
 
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
-            await log_channel.send(f"🛑 {member.mention} leadta a szolgálatot! Ledolgozott idő: {format_time(worked)}")
+            embed = discord.Embed(description=f"🛑 {member.mention} leadta a szolgálatot!\n⏱ Ledolgozott idő: {format_time(worked)}", color=discord.Color.orange())
+            await log_channel.send(embed=embed)
 
         await interaction.response.send_message(f"🍔 Szolgálat leadva! Ledolgozott idő: {format_time(worked)}", ephemeral=True)
+
+# ===== MODAL ÓRABÉR KÉRÉS =====
+class HourlyRateModal(discord.ui.Modal):
+    def __init__(self, user_times, total_worked):
+        super().__init__(title="Mai órabér")
+        self.user_times = user_times
+        self.total_worked = total_worked
+        self.rate_input = discord.ui.TextInput(label="Írd be a mai órabért $-ban:", placeholder="pl. 15", required=True)
+        self.add_item(self.rate_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            rate = float(self.rate_input.value)
+        except:
+            await interaction.response.send_message("⛔ Nem érvényes szám.", ephemeral=True)
+            return
+        payment_embed = discord.Embed(title="💵 Fizetés lista", color=discord.Color.gold())
+        for name, total_minutes in self.user_times:
+            hours = total_minutes / 60
+            pay = round(hours * rate)
+            payment_embed.add_field(name=name, value=f"${pay}", inline=True)
+        payment_embed.set_footer(text=f"Összes ledolgozott idő: {format_time(self.total_worked)}")
+        await interaction.response.send_message(embed=payment_embed)
 
 # ===== BOT READY =====
 @bot.event
@@ -140,28 +165,26 @@ async def szolipanel(ctx):
     try:
         channel = await bot.fetch_channel(SERVICE_CHANNEL_ID)
     except:
-        await ctx.send("❌ Nem találom a csatornát. Ellenőrizd az ID-t.")
+        await ctx.send("❌ Nem találom a csatornát.")
         return
-    await channel.send(
-        "## 🍔 Szolgálati Panel\nNyomj a gombokra a szolgálat kezeléséhez:",
-        view=ServiceView()
-    )
+    embed = discord.Embed(title="🍔 Szolgálati Panel", description="Nyomj a gombokra a szolgálat kezeléséhez:", color=discord.Color.blurple())
+    await channel.send(embed=embed, view=ServiceView())
     await ctx.send("✅ Panel kirakva.")
 
-# ===== !SZOLI =====
+# ===== SZOLGÁLATBAN LÉVŐK =====
 @bot.command(name="szoli")
 async def szoli(ctx):
     if not is_admin(ctx):
         await ctx.send("⛔ Admin jog kell.")
         return
     role = ctx.guild.get_role(SERVICE_ROLE_ID)
+    embed = discord.Embed(title="🍔 Szolgálatban lévők", color=discord.Color.green())
     if not role or len(role.members) == 0:
-        await ctx.send("Senki nincs szolgálatban. Mindenki lusta g*ci...")
-        return
-    description = ""
-    for member in role.members:
-        description += f"• {member.mention}\n"
-    await ctx.send(f"🍔 **Szolgálatban lévők:**\n{description}")
+        embed.description = "Senki nincs szolgálatban. Mindenki lusta g*ci..."
+    else:
+        for member in role.members:
+            embed.add_field(name=member.display_name, value="Szolgálatban", inline=True)
+    await ctx.send(embed=embed)
 
 # ===== IDŐ HOZZÁADÁS / LEVONÁS =====
 @bot.command(name="hozzaad")
@@ -174,7 +197,8 @@ async def hozzaad(ctx, member: discord.Member, *, amount: str):
     duty_logs.setdefault(uid, {})
     duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + minutes
     save_logs()
-    await ctx.send(f"➕ **Hozzáadva:** {member.mention} ({format_time(minutes)})")
+    embed = discord.Embed(description=f"➕ Hozzáadva: {member.mention} ({format_time(minutes)})", color=discord.Color.green())
+    await ctx.send(embed=embed)
 
 @bot.command(name="levon")
 async def levon(ctx, member: discord.Member, *, amount: str):
@@ -186,7 +210,8 @@ async def levon(ctx, member: discord.Member, *, amount: str):
     duty_logs.setdefault(uid, {})
     duty_logs[uid]["total"] = max(0, duty_logs[uid].get("total", 0) - minutes)
     save_logs()
-    await ctx.send(f"➖ **Levonva:** {member.mention} ({format_time(minutes)})")
+    embed = discord.Embed(description=f"➖ Levonva: {member.mention} ({format_time(minutes)})", color=discord.Color.red())
+    await ctx.send(embed=embed)
 
 # ===== IDŐ LEKÉRDEZÉS =====
 @bot.command(name="ido")
@@ -194,7 +219,8 @@ async def ido(ctx, member: discord.Member = None):
     member = member or ctx.author
     uid = str(member.id)
     total = duty_logs.get(uid, {}).get("total", 0)
-    await ctx.send(f"⏱ **{member.mention} összes munkaideje:** {format_time(total)}")
+    embed = discord.Embed(title=f"⏱ {member.display_name} munkaideje", description=format_time(total), color=discord.Color.blue())
+    await ctx.send(embed=embed)
 
 # ===== LISTA ÉS FIZETÉS =====
 @bot.command(name="list")
@@ -215,51 +241,18 @@ async def list_all(ctx, action: str = None):
                 user_times.append((f"User {uid}", total))
             total_worked += total
 
-    user_times.sort(key=lambda x: x[1], reverse=True)
     if not user_times:
-        await ctx.send("📋 **Nincs még rögzített munkaidő.**")
+        await ctx.send("📋 Nincs rögzített munkaidő.")
         return
 
-    description_text = ""
+    embed = discord.Embed(title="📋 Munkaidő Lista", color=discord.Color.blurple())
     for idx, (name, total_minutes) in enumerate(user_times, start=1):
-        description_text += f"**{idx}.** {name} - `{format_time(total_minutes)}`\n"
+        embed.add_field(name=f"{idx}. {name}", value=format_time(total_minutes), inline=True)
+    await ctx.send(embed=embed)
+    await bot.wait_for("interaction", check=None, timeout=None)  # placeholder
 
-    await ctx.send(f"📋 Munkaidő Lista:\n{description_text}")
-    await ctx.send(f"⏱ **Összes ledolgozott idő:** {format_time(total_worked)}")
-
-    # Kérdés az órabérről
-    await ctx.send("💰 Kérlek írd be a mai órabért $-ban:")
-
-    def check(m):
-        return m.author == ctx.author and m.channel == ctx.channel
-
-    try:
-        msg = await bot.wait_for("message", check=check, timeout=60)
-        rate = float(msg.content)
-    except:
-        await ctx.send("⛔ Nem kaptam érvényes számot. Fizetés számítás megszakítva.")
-        return
-
-    payment_text = ""
-    for name, total_minutes in user_times:
-        hours = total_minutes / 60
-        pay = round(hours * rate)
-        payment_text += f"• {name}: ${pay}\n"
-
-    await ctx.send(f"💵 **Fizetés lista (kerekítve $):**\n{payment_text}")
-
-# ===== DELETE ALL =====
-@bot.command(name="delete")
-async def delete(ctx, action: str = None):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell.")
-        return
-    if action != "all":
-        await ctx.send("Használat: `!delete all`")
-        return
-    duty_logs.clear()
-    save_logs()
-    await ctx.send("🧹 **Minden felhasználó munkaideje törölve lett.**")
+    # Modal a fizetéshez
+    await ctx.send_modal(HourlyRateModal(user_times, total_worked))
 
 # ===== FORCE KEZD / VEGE =====
 @bot.command(name="forcekezd")
@@ -274,7 +267,8 @@ async def forcekezd(ctx, member: discord.Member):
         return
     duty_logs[uid]["start"] = time.time()
     save_logs()
-    await ctx.send(f"🟢 Admin elindította a műszakot: {member.mention}")
+    embed = discord.Embed(description=f"🟢 Admin elindította a műszakot: {member.mention}", color=discord.Color.green())
+    await ctx.send(embed=embed)
 
 @bot.command(name="forcevege")
 async def forcevege(ctx, member: discord.Member = None, action: str = None):
@@ -311,7 +305,8 @@ async def forcevege(ctx, member: discord.Member = None, action: str = None):
     duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
     duty_logs[uid].pop("start")
     save_logs()
-    await ctx.send(f"🛑 Admin lezárta a műszakot: {member.mention}\n⏱ Ledolgozott idő: {format_time(worked)}")
+    embed = discord.Embed(description=f"🛑 Admin lezárta a műszakot: {member.mention}\n⏱ Ledolgozott idő: {format_time(worked)}", color=discord.Color.orange())
+    await ctx.send(embed=embed)
 
 # ===== BOT INDÍTÁS =====
 bot.run(TOKEN)
