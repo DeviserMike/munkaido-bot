@@ -190,7 +190,7 @@ async def levon(ctx, member: discord.Member, *, amount: str):
     embed = discord.Embed(description=f"➖ Levonva: {member.mention} ({format_time(minutes)})", color=discord.Color.red())
     await ctx.send(embed=embed)
 
-# ===== LISTA ÉS FIZETÉS ÜZENET ALAPÚ PROMPT =====
+# ===== LISTA ÉS FIZETÉS =====
 @bot.command(name="list")
 async def list_all(ctx, action: str = None):
     if action != "all":
@@ -221,15 +221,11 @@ async def list_all(ctx, action: str = None):
     embed = discord.Embed(title="📋 Munkaidő Lista", description=description_text, color=discord.Color.blurple())
     await ctx.send(embed=embed)
 
-    # Összesített idő külön üzenetként
     await ctx.send(f"⏱ **Összesen mindenki ledolgozott idő:** {format_time(total_worked)}")
 
-    # Üzenet prompt az órabérhez (csak admin)
     await ctx.send(f"{ctx.author.mention}, írd be a mai órabért $-ban (pl. 15):")
-
     def check(m):
         return m.author == ctx.author and m.channel == ctx.channel
-
     try:
         msg = await bot.wait_for("message", check=check, timeout=60)
         rate = float(msg.content)
@@ -298,6 +294,19 @@ async def forcevege(ctx, member: discord.Member = None, action: str = None):
     save_logs()
     embed = discord.Embed(description=f"🛑 Admin lezárta a műszakot: {member.mention}\n⏱ Ledolgozott idő: {format_time(worked)}", color=discord.Color.orange())
     await ctx.send(embed=embed)
+
+# ===== DELETE ALL =====
+@bot.command(name="delete")
+async def delete(ctx, action: str = None):
+    if not is_admin(ctx):
+        await ctx.send("⛔ Admin jog kell.")
+        return
+    if action != "all":
+        await ctx.send("Használat: `!delete all`")
+        return
+    duty_logs.clear()
+    save_logs()
+    await ctx.send("🧹 **Minden felhasználó munkaideje törölve lett.**")
 
 # ===== BOT INDÍTÁS =====
 bot.run(TOKEN)
