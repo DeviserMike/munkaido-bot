@@ -18,7 +18,7 @@ def run():
 
 Thread(target=run).start()
 
-# ===== DISCORD BOT =====
+# ===== BOT =====
 TOKEN = os.environ.get("DISCORD_TOKEN")
 if not TOKEN:
     raise ValueError("DISCORD_TOKEN nincs beállítva!")
@@ -66,7 +66,7 @@ def parse_time(value: str):
             total_minutes += float(part)
     return total_minutes
 
-# ===== SZOLGÁLATI GOMBOS VIEW =====
+# ===== SZOLGÁLATI PANEL VIEW =====
 class ServiceView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -117,7 +117,7 @@ class ServiceView(discord.ui.View):
 
         await interaction.response.send_message(f"🍔 Szolgálat leadva! Ledolgozott idő: {format_time(worked)}", ephemeral=True)
 
-# ===== MODAL ÓRABÉR KÉRÉS =====
+# ===== MODAL ÓRABÉR =====
 class HourlyRateModal(discord.ui.Modal):
     def __init__(self, user_times, total_worked):
         super().__init__(title="Mai órabér")
@@ -132,6 +132,7 @@ class HourlyRateModal(discord.ui.Modal):
         except:
             await interaction.response.send_message("⛔ Nem érvényes szám.", ephemeral=True)
             return
+
         payment_embed = discord.Embed(title="💵 Fizetés lista", color=discord.Color.gold())
         for name, total_minutes in self.user_times:
             hours = total_minutes / 60
@@ -213,15 +214,6 @@ async def levon(ctx, member: discord.Member, *, amount: str):
     embed = discord.Embed(description=f"➖ Levonva: {member.mention} ({format_time(minutes)})", color=discord.Color.red())
     await ctx.send(embed=embed)
 
-# ===== IDŐ LEKÉRDEZÉS =====
-@bot.command(name="ido")
-async def ido(ctx, member: discord.Member = None):
-    member = member or ctx.author
-    uid = str(member.id)
-    total = duty_logs.get(uid, {}).get("total", 0)
-    embed = discord.Embed(title=f"⏱ {member.display_name} munkaideje", description=format_time(total), color=discord.Color.blue())
-    await ctx.send(embed=embed)
-
 # ===== LISTA ÉS FIZETÉS =====
 @bot.command(name="list")
 async def list_all(ctx, action: str = None):
@@ -236,9 +228,10 @@ async def list_all(ctx, action: str = None):
         if total > 0:
             try:
                 member = await ctx.guild.fetch_member(int(uid))
-                user_times.append((member.display_name, total))
+                name = member.display_name
             except:
-                user_times.append((f"User {uid}", total))
+                name = f"User {uid}"
+            user_times.append((name, total))
             total_worked += total
 
     if not user_times:
@@ -249,7 +242,6 @@ async def list_all(ctx, action: str = None):
     for idx, (name, total_minutes) in enumerate(user_times, start=1):
         embed.add_field(name=f"{idx}. {name}", value=format_time(total_minutes), inline=True)
     await ctx.send(embed=embed)
-    await bot.wait_for("interaction", check=None, timeout=None)  # placeholder
 
     # Modal a fizetéshez
     await ctx.send_modal(HourlyRateModal(user_times, total_worked))
