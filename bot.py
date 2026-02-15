@@ -29,9 +29,9 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ===== SZOLGÁLATI BEÁLLÍTÁSOK =====
-SERVICE_CHANNEL_ID = 1455619759340257300  # panel csatorna
-SERVICE_ROLE_ID = 1472388518914428928     # szolgálatban rang
-LOG_CHANNEL_ID = 1472403885246255175      # log csatorna
+SERVICE_CHANNEL_ID = 1455619759340257300
+SERVICE_ROLE_ID = 1472388518914428928
+LOG_CHANNEL_ID = 1472403885246255175
 
 # ===== JSON FÁJL =====
 FILENAME = "duty_logs.json"
@@ -196,7 +196,7 @@ async def ido(ctx, member: discord.Member = None):
     total = duty_logs.get(uid, {}).get("total", 0)
     await ctx.send(f"⏱ **{member.mention} összes munkaideje:** {format_time(total)}")
 
-# ===== LISTA =====
+# ===== LISTA ÉS FIZETÉS =====
 @bot.command(name="list")
 async def list_all(ctx, action: str = None):
     if action != "all":
@@ -226,6 +226,27 @@ async def list_all(ctx, action: str = None):
 
     await ctx.send(f"📋 Munkaidő Lista:\n{description_text}")
     await ctx.send(f"⏱ **Összes ledolgozott idő:** {format_time(total_worked)}")
+
+    # Kérdés az órabérről
+    await ctx.send("💰 Kérlek írd be a mai órabért $-ban:")
+
+    def check(m):
+        return m.author == ctx.author and m.channel == ctx.channel
+
+    try:
+        msg = await bot.wait_for("message", check=check, timeout=60)
+        rate = float(msg.content)
+    except:
+        await ctx.send("⛔ Nem kaptam érvényes számot. Fizetés számítás megszakítva.")
+        return
+
+    payment_text = ""
+    for name, total_minutes in user_times:
+        hours = total_minutes / 60
+        pay = round(hours * rate)
+        payment_text += f"• {name}: ${pay}\n"
+
+    await ctx.send(f"💵 **Fizetés lista (kerekítve $):**\n{payment_text}")
 
 # ===== DELETE ALL =====
 @bot.command(name="delete")
