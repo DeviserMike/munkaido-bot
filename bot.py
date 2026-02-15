@@ -80,13 +80,11 @@ class ServiceView(discord.ui.View):
             return
         await member.add_roles(role)
 
-        # Log start idő
         uid = str(member.id)
         duty_logs.setdefault(uid, {})
         duty_logs[uid]["start"] = time.time()
         save_logs()
 
-        # Log csatornába
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
             await log_channel.send(f"🟢 {member.mention} szolgálatba állt!")
@@ -102,17 +100,15 @@ class ServiceView(discord.ui.View):
             return
         await member.remove_roles(role)
 
-        # Munkaidő számítás
         uid = str(member.id)
         if uid in duty_logs and "start" in duty_logs[uid]:
-            worked = (time.time() - duty_logs[uid]["start"]) / 60  # percben
+            worked = (time.time() - duty_logs[uid]["start"]) / 60
             duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
             duty_logs[uid].pop("start")
             save_logs()
         else:
             worked = 0
 
-        # Log csatornába
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
             await log_channel.send(f"🛑 {member.mention} leadta a szolgálatot! Ledolgozott idő: {format_time(worked)}")
@@ -206,7 +202,9 @@ async def list_all(ctx, action: str = None):
     if action != "all":
         await ctx.send("Használat: `!list all`")
         return
+
     user_times = []
+    total_worked = 0
     for uid, data in duty_logs.items():
         total = data.get("total", 0)
         if total > 0:
@@ -215,14 +213,19 @@ async def list_all(ctx, action: str = None):
                 user_times.append((member.display_name, total))
             except:
                 user_times.append((f"User {uid}", total))
+            total_worked += total
+
     user_times.sort(key=lambda x: x[1], reverse=True)
     if not user_times:
         await ctx.send("📋 **Nincs még rögzített munkaidő.**")
         return
+
     description_text = ""
     for idx, (name, total_minutes) in enumerate(user_times, start=1):
         description_text += f"**{idx}.** {name} - `{format_time(total_minutes)}`\n"
+
     await ctx.send(f"📋 Munkaidő Lista:\n{description_text}")
+    await ctx.send(f"⏱ **Összes ledolgozott idő:** {format_time(total_worked)}")
 
 # ===== DELETE ALL =====
 @bot.command(name="delete")
@@ -236,6 +239,58 @@ async def delete(ctx, action: str = None):
     duty_logs.clear()
     save_logs()
     await ctx.send("🧹 **Minden felhasználó munkaideje törölve lett.**")
+
+# ===== FORCE KEZD / VEGE =====
+@bot.command(name="forcekezd")
+async def forcekezd(ctx, member: discord.Member):
+    if not is_admin(ctx):
+        await ctx.send("⛔ Admin jog kell.")
+        return
+    uid = str(member.id)
+    duty_logs.setdefault(uid, {})
+    if "start" in duty_logs[uid]:
+        await ctx.send(f"❌ {member.mention} már műszakban van.")
+        return
+    duty_logs[uid]["start"] = time.time()
+    save_logs()
+    await ctx.send(f"🟢 Admin elindította a műszakot: {member.mention}")
+
+@bot.command(name="forcevege")
+async def forcevege(ctx, member: discord.Member = None, action: str = None):
+    if not is_admin(ctx):
+        await ctx.send("⛔ Admin jog kell.")
+        return
+    if action == "all":
+        messages = []
+        for uid, data in duty_logs.items():
+            if "start" in data:
+                member_id = int(uid)
+                try:
+                    member_obj = await ctx.guild.fetch_member(member_id)
+                    worked = (time.time() - data["start"]) / 60
+                    data["total"] = data.get("total", 0) + worked
+                    data.pop("start")
+                    messages.append(f"🛑 {member_obj.mention} műszak lezárva! Ledolgozott idő: {format_time(worked)}")
+                except:
+                    continue
+        save_logs()
+        await ctx.send("\n".join(messages) if messages else "Senki nincs műszakban.")
+        return
+
+    if not member:
+        await ctx.send("Használat: `!forcevege @user` vagy `!forcevege all`")
+        return
+
+    uid = str(member.id)
+    if uid not in duty_logs or "start" not in duty_logs[uid]:
+        await ctx.send(f"❌ {member.mention} nincs aktív műszakban.")
+        return
+
+    worked = (time.time() - duty_logs[uid]["start"]) / 60
+    duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
+    duty_logs[uid].pop("start")
+    save_logs()
+    await ctx.send(f"🛑 Admin lezárta a műszakot: {member.mention}\n⏱ Ledolgozott idő: {format_time(worked)}")
 
 # ===== BOT INDÍTÁS =====
 bot.run(TOKEN)
