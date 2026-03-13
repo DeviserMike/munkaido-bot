@@ -37,7 +37,6 @@ GUILD_CONFIG = {
         "log_channel": 1482119191812116651,
         "service_role": 1482120925687316641
     }
-    # további szerverek ide adhatók
 }
 
 # ===== JSON =====
@@ -72,60 +71,48 @@ async def send_log(guild, embed):
 # ===== PANEL =====
 class ServiceView(discord.ui.View):
 
-    def __init__(self):
+    def __init__(self, guild_id):
         super().__init__(timeout=None)
+        self.guild_id = guild_id
+        config = GUILD_CONFIG.get(guild_id)
+        self.role_id = config["service_role"] if config else None
 
     @discord.ui.button(label="Szolgálatba áll", emoji="🍔", style=discord.ButtonStyle.success)
     async def start_service(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = interaction.user
-        config = GUILD_CONFIG.get(interaction.guild.id)
-        if not config:
-            await interaction.response.send_message("❌ Szerepkör nincs beállítva ehhez a szerverhez.", ephemeral=True)
+        if interaction.guild.id != self.guild_id:
+            await interaction.response.send_message("❌ Ez a gomb nem érvényes ezen a szerveren.", ephemeral=True)
             return
-        role = interaction.guild.get_role(config["service_role"])
+        member = interaction.user
+        role = interaction.guild.get_role(self.role_id)
         if role in member.roles:
             await interaction.response.send_message("❌ Már szolgálatban vagy.", ephemeral=True)
             return
-
         await member.add_roles(role)
         uid = str(member.id)
-        duty_logs.setdefault(uid, {})
-        duty_logs[uid]["start"] = time.time()
+        duty_logs.setdefault(uid, {})["start"] = time.time()
         save_logs()
-
-        embed = discord.Embed(
-            description=f"🟢 {member.mention} szolgálatba állt!",
-            color=discord.Color.green()
-        )
+        embed = discord.Embed(description=f"🟢 {member.mention} szolgálatba állt!", color=discord.Color.green())
         await send_log(interaction.guild, embed)
         await interaction.response.send_message("🍔 Szolgálatba álltál!", ephemeral=True)
 
     @discord.ui.button(label="Szolgálat leadása", emoji="🍔", style=discord.ButtonStyle.danger)
     async def stop_service(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = interaction.user
-        config = GUILD_CONFIG.get(interaction.guild.id)
-        if not config:
-            await interaction.response.send_message("❌ Szerepkör nincs beállítva ehhez a szerverhez.", ephemeral=True)
+        if interaction.guild.id != self.guild_id:
+            await interaction.response.send_message("❌ Ez a gomb nem érvényes ezen a szerveren.", ephemeral=True)
             return
-        role = interaction.guild.get_role(config["service_role"])
+        member = interaction.user
+        role = interaction.guild.get_role(self.role_id)
         if role not in member.roles:
             await interaction.response.send_message("❌ Nem vagy szolgálatban.", ephemeral=True)
             return
-
         await member.remove_roles(role)
         uid = str(member.id)
+        worked = 0
         if uid in duty_logs and "start" in duty_logs[uid]:
-            worked = (time.time() - duty_logs[uid]["start"]) / 60
+            worked = (time.time() - duty_logs[uid].pop("start")) / 60
             duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
-            duty_logs[uid].pop("start")
             save_logs()
-        else:
-            worked = 0
-
-        embed = discord.Embed(
-            description=f"🛑 {member.mention} leadta a szolgálatot!\n⏱ {format_time(worked)}",
-            color=discord.Color.orange()
-        )
+        embed = discord.Embed(description=f"🛑 {member.mention} leadta a szolgálatot!\n⏱ {format_time(worked)}", color=discord.Color.orange())
         await send_log(interaction.guild, embed)
         await interaction.response.send_message(f"🍔 Szolgálat leadva! {format_time(worked)}", ephemeral=True)
 
@@ -150,15 +137,9 @@ async def szolipanel(ctx):
     if not is_admin(ctx):
         await ctx.send("⛔ Admin jog kell")
         return
-
-    embed = discord.Embed(
-        title="🍔 Szolgálati Panel",
-        description="Használd a gombokat",
-        color=discord.Color.blurple()
-    )
-
-    # View mindig abba a csatornába kerül, ahol a parancsot kiadták
-    await ctx.send(embed=embed, view=ServiceView())
+    embed = discord.Embed(title="🍔 Szolgálati Panel", description="Használd a gombokat", color=discord.Color.blurple())
+    view = ServiceView(ctx.guild.id)  # guild-specifikus View
+    await ctx.send(embed=embed, view=view)
 
 # ===== LISTA =====
 @bot.command(name="list")
@@ -166,7 +147,6 @@ async def list_all(ctx, action=None):
     if action != "all":
         await ctx.send("Használat: !list all")
         return
-
     user_times = []
     total = 0
     for uid, data in duty_logs.items():
@@ -179,20 +159,13 @@ async def list_all(ctx, action=None):
                 name = uid
             user_times.append((name, t))
             total += t
-
     if not user_times:
         await ctx.send("Nincs adat")
         return
-
     desc = ""
     for i, (name, t) in enumerate(user_times, 1):
         desc += f"{i}. {name} - {format_time(t)}\n"
-
-    embed = discord.Embed(
-        title="Munkaidő lista",
-        description=desc,
-        color=discord.Color.blurple()
-    )
+    embed = discord.Embed(title="Munkaidő lista", description=desc, color=discord.Color.blurple())
     await ctx.send(embed=embed)
     await ctx.send(f"Összes idő: {format_time(total)}")
 
