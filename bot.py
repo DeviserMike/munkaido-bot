@@ -27,6 +27,19 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ===== GUILD SPECIFIC CONFIG =====
+# Külön-külön szerverekhez
+GUILDS = {
+    111111111111111111: {  # Első Discord
+        "log_channel": 1458925615989260319,
+        "service_role": 1472388518914428928
+    },
+    222222222222222222: {  # Második Discord
+        "log_channel": 1482119191812116651,
+        "service_role": 1482120925687316641
+    }
+}
+
 # ===== JSON =====
 FILENAME = "duty_logs.json"
 if os.path.exists(FILENAME):
@@ -75,9 +88,11 @@ class ServiceView(discord.ui.View):
             await interaction.response.send_message("❌ Már szolgálatban vagy.", ephemeral=True)
             return
         await member.add_roles(role)
-        uid = str(member.id)
+
+        uid = f"{interaction.guild.id}_{member.id}"  # Guild ID-t is hozzáadjuk, így külön van
         duty_logs.setdefault(uid, {})["start"] = time.time()
         save_logs()
+
         embed = discord.Embed(description=f"🟢 {member.mention} szolgálatba állt!", color=discord.Color.green())
         await self._send_log(embed)
         await interaction.response.send_message("🍔 Szolgálatba álltál!", ephemeral=True)
@@ -92,12 +107,14 @@ class ServiceView(discord.ui.View):
             await interaction.response.send_message("❌ Nem vagy szolgálatban.", ephemeral=True)
             return
         await member.remove_roles(role)
-        uid = str(member.id)
+
+        uid = f"{interaction.guild.id}_{member.id}"
         worked = 0
         if uid in duty_logs and "start" in duty_logs[uid]:
             worked = (time.time() - duty_logs[uid].pop("start")) / 60
             duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
             save_logs()
+
         embed = discord.Embed(description=f"🛑 {member.mention} leadta a szolgálatot!\n⏱ {format_time(worked)}", color=discord.Color.orange())
         await self._send_log(embed)
         await interaction.response.send_message(f"🍔 Szolgálat leadva! {format_time(worked)}", ephemeral=True)
@@ -110,19 +127,17 @@ async def on_ready():
 # ===== SZOLIPANEL PARANCS =====
 @bot.command()
 async def szolipanel(ctx):
-    # Szerepkör és log csatorna lekérése a guildből
     guild = ctx.guild
-    role = discord.utils.get(guild.roles, name="Szolgálatban")  # vagy ID alapján: guild.get_role(ID)
-    log_channel = discord.utils.get(guild.channels, name="log")  # vagy ID alapján
-    if not role:
-        await ctx.send("❌ Nincs Szolgálatban szerepkör beállítva ezen a szerveren!")
-        return
-    if not log_channel:
-        await ctx.send("❌ Nincs log csatorna beállítva ezen a szerveren!")
+    config = GUILDS.get(guild.id)
+    if not config:
+        await ctx.send("❌ Ez a guild nincs konfigurálva a bot számára!")
         return
 
+    role_id = config["service_role"]
+    log_channel_id = config["log_channel"]
+
     embed = discord.Embed(title="🍔 Szolgálati Panel", description="Használd a gombokat", color=discord.Color.blurple())
-    view = ServiceView(guild, role.id, log_channel.id)
+    view = ServiceView(guild, role_id, log_channel_id)
     await ctx.send(embed=embed, view=view)
 
 # ===== LISTA =====
@@ -134,13 +149,16 @@ async def list_all(ctx, action=None):
     user_times = []
     total = 0
     for uid, data in duty_logs.items():
+        guild_id, user_id = uid.split("_")
+        if int(guild_id) != ctx.guild.id:
+            continue  # Csak az aktuális guild felhasználóit listázzuk
         t = data.get("total", 0)
         if t > 0:
             try:
-                member = await ctx.guild.fetch_member(int(uid))
+                member = await ctx.guild.fetch_member(int(user_id))
                 name = member.display_name
             except:
-                name = uid
+                name = user_id
             user_times.append((name, t))
             total += t
     if not user_times:
