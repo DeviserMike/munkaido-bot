@@ -55,9 +55,6 @@ def format_time(minutes):
     minutes = int(minutes)
     return f"{minutes//60}h {minutes%60}m"
 
-def is_admin(ctx):
-    return ctx.author.guild_permissions.administrator
-
 # ===== PANEL VIEW =====
 class ServiceView(discord.ui.View):
     def __init__(self, guild, role_id, log_channel_id):
@@ -125,8 +122,12 @@ async def on_ready():
 
 # ===== GUILD CONFIG PARANCS =====
 @bot.command()
-@commands.has_permissions(administrator=True)
 async def config(ctx, log_channel: discord.TextChannel, role: discord.Role):
+    # Csak adminok használhatják
+    if not ctx.author.guild_permissions.administrator:
+        await ctx.send("❌ Ehhez a parancshoz admin jogosultság kell.")
+        return
+
     GUILDS[ctx.guild.id] = {
         "log_channel": log_channel.id,
         "service_role": role.id
@@ -137,7 +138,6 @@ async def config(ctx, log_channel: discord.TextChannel, role: discord.Role):
 # ===== SZOLIPANEL PARANCS =====
 @bot.command()
 async def szolipanel(ctx):
-    guild_id = str(ctx.guild.id)
     config = GUILDS.get(ctx.guild.id)
     if not config:
         await ctx.send("❌ Ez a guild nincs konfigurálva a bot számára! Használd az `!config` parancsot.")
