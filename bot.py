@@ -27,18 +27,6 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ===== SZERVER KONFIG =====
-GUILD_CONFIG = {
-    111111111111111111: {  # első Discord
-        "log_channel": 1458925615989260319,
-        "service_role": 1472388518914428928
-    },
-    222222222222222222: {  # második Discord
-        "log_channel": 1482119191812116651,
-        "service_role": 1482120925687316641
-    }
-}
-
 # ===== JSON =====
 FILENAME = "duty_logs.json"
 if os.path.exists(FILENAME):
@@ -58,22 +46,18 @@ def format_time(minutes):
 def is_admin(ctx):
     return ctx.author.guild_permissions.administrator
 
-# ===== LOG FUNKCIÓ =====
-async def send_log(guild, embed):
-    config = GUILD_CONFIG.get(guild.id)
-    if not config:
-        return
-    channel = guild.get_channel(config["log_channel"])
-    if channel:
-        await channel.send(embed=embed)
-
 # ===== PANEL VIEW =====
 class ServiceView(discord.ui.View):
-    def __init__(self, guild):
+    def __init__(self, guild, role_id, log_channel_id):
         super().__init__(timeout=None)
         self.guild = guild
-        config = GUILD_CONFIG.get(guild.id)
-        self.role_id = config["service_role"] if config else None
+        self.role_id = role_id
+        self.log_channel_id = log_channel_id
+
+    async def _send_log(self, embed):
+        channel = self.guild.get_channel(self.log_channel_id)
+        if channel:
+            await channel.send(embed=embed)
 
     async def _check_guild(self, interaction):
         if interaction.guild != self.guild:
@@ -95,7 +79,7 @@ class ServiceView(discord.ui.View):
         duty_logs.setdefault(uid, {})["start"] = time.time()
         save_logs()
         embed = discord.Embed(description=f"🟢 {member.mention} szolgálatba állt!", color=discord.Color.green())
-        await send_log(interaction.guild, embed)
+        await self._send_log(embed)
         await interaction.response.send_message("🍔 Szolgálatba álltál!", ephemeral=True)
 
     @discord.ui.button(label="Szolgálat leadása", emoji="🍔", style=discord.ButtonStyle.danger)
@@ -115,7 +99,7 @@ class ServiceView(discord.ui.View):
             duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
             save_logs()
         embed = discord.Embed(description=f"🛑 {member.mention} leadta a szolgálatot!\n⏱ {format_time(worked)}", color=discord.Color.orange())
-        await send_log(interaction.guild, embed)
+        await self._send_log(embed)
         await interaction.response.send_message(f"🍔 Szolgálat leadva! {format_time(worked)}", ephemeral=True)
 
 # ===== READY =====
@@ -123,21 +107,22 @@ class ServiceView(discord.ui.View):
 async def on_ready():
     print("Bot online:", bot.user)
 
-# ===== REG PARANCS =====
-@bot.command()
-async def reg(ctx, vezeteknev: str, keresztnev: str):
-    try:
-        new = f"{ctx.author.name} // {vezeteknev} {keresztnev}"
-        await ctx.author.edit(nick=new)
-        await ctx.send(f"✅ Neved átírva: {new}")
-    except Exception as e:
-        await ctx.send(f"Hiba: {e}")
-
 # ===== SZOLIPANEL PARANCS =====
 @bot.command()
 async def szolipanel(ctx):
+    # Szerepkör és log csatorna lekérése a guildből
+    guild = ctx.guild
+    role = discord.utils.get(guild.roles, name="Szolgálatban")  # vagy ID alapján: guild.get_role(ID)
+    log_channel = discord.utils.get(guild.channels, name="log")  # vagy ID alapján
+    if not role:
+        await ctx.send("❌ Nincs Szolgálatban szerepkör beállítva ezen a szerveren!")
+        return
+    if not log_channel:
+        await ctx.send("❌ Nincs log csatorna beállítva ezen a szerveren!")
+        return
+
     embed = discord.Embed(title="🍔 Szolgálati Panel", description="Használd a gombokat", color=discord.Color.blurple())
-    view = ServiceView(ctx.guild)  # a View mindig abba a guildbe kerül, ahol kiadják
+    view = ServiceView(guild, role.id, log_channel.id)
     await ctx.send(embed=embed, view=view)
 
 # ===== LISTA =====
@@ -168,5 +153,4 @@ async def list_all(ctx, action=None):
     await ctx.send(embed=embed)
     await ctx.send(f"Összes idő: {format_time(total)}")
 
-# ===== BOT START =====
 bot.run(TOKEN)
