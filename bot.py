@@ -28,7 +28,6 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ===== SZERVER SPECIFIKÁCIÓ =====
-# minden guild-hez külön log csatorna és szolgálati szerepkör
 GUILD_CONFIG = {
     111111111111111111: {  # első Discord
         "log_channel": 1458925615989260319,
@@ -38,7 +37,7 @@ GUILD_CONFIG = {
         "log_channel": 1482119191812116651,
         "service_role": 1482120925687316641
     }
-    # ide lehet további szervereket hozzáadni
+    # további szerverek ide adhatók
 }
 
 # ===== JSON =====
@@ -73,9 +72,8 @@ async def send_log(guild, embed):
 # ===== PANEL =====
 class ServiceView(discord.ui.View):
 
-    def __init__(self, guild_id=None):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.guild_id = guild_id  # ha szükséges, később lehet hivatkozni
 
     @discord.ui.button(label="Szolgálatba áll", emoji="🍔", style=discord.ButtonStyle.success)
     async def start_service(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -158,8 +156,9 @@ async def szolipanel(ctx):
         description="Használd a gombokat",
         color=discord.Color.blurple()
     )
-    # minden panel küldésekor guild-specifikus ServiceView
-    await ctx.send(embed=embed, view=ServiceView(guild_id=ctx.guild.id))
+
+    # View mindig abba a csatornába kerül, ahol a parancsot kiadták
+    await ctx.send(embed=embed, view=ServiceView())
 
 # ===== LISTA =====
 @bot.command(name="list")
