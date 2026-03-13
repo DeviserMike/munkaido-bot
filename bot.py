@@ -28,13 +28,12 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ===== SZERVER KONFIG =====
-# Minden guild-nek külön beállítások
 GUILD_CONFIG = {
-    111111111111111111: {  # Első Discord
+    111111111111111111: {  # első Discord
         "log_channel": 1458925615989260319,
         "service_role": 1472388518914428928
     },
-    222222222222222222: {  # Második Discord
+    222222222222222222: {  # második Discord
         "log_channel": 1482119191812116651,
         "service_role": 1482120925687316641
     }
@@ -42,7 +41,6 @@ GUILD_CONFIG = {
 
 # ===== JSON =====
 FILENAME = "duty_logs.json"
-
 if os.path.exists(FILENAME):
     with open(FILENAME,"r") as f:
         duty_logs = json.load(f)
@@ -139,7 +137,7 @@ async def reg(ctx, vezeteknev: str, keresztnev: str):
 @bot.command()
 async def szolipanel(ctx):
     embed = discord.Embed(title="🍔 Szolgálati Panel", description="Használd a gombokat", color=discord.Color.blurple())
-    view = ServiceView(ctx.guild)  # Panel mindig abba a guild-be kerül, ahol kiadták
+    view = ServiceView(ctx.guild)  # a View mindig abba a guildbe kerül, ahol kiadják
     await ctx.send(embed=embed, view=view)
 
 # ===== LISTA =====
