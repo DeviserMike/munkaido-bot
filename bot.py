@@ -27,13 +27,14 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ===== SZERVER SPECIFIKÁCIÓ =====
+# ===== SZERVER KONFIG =====
+# Minden guild-nek külön beállítások
 GUILD_CONFIG = {
-    111111111111111111: {  # első Discord
+    111111111111111111: {  # Első Discord
         "log_channel": 1458925615989260319,
         "service_role": 1472388518914428928
     },
-    222222222222222222: {  # második Discord
+    222222222222222222: {  # Második Discord
         "log_channel": 1482119191812116651,
         "service_role": 1482120925687316641
     }
@@ -53,7 +54,7 @@ def save_logs():
         json.dump(duty_logs,f)
 
 def format_time(minutes):
-    minutes=int(minutes)
+    minutes = int(minutes)
     return f"{minutes//60}h {minutes%60}m"
 
 def is_admin(ctx):
@@ -68,19 +69,23 @@ async def send_log(guild, embed):
     if channel:
         await channel.send(embed=embed)
 
-# ===== PANEL =====
+# ===== PANEL VIEW =====
 class ServiceView(discord.ui.View):
-
     def __init__(self, guild):
         super().__init__(timeout=None)
         self.guild = guild
         config = GUILD_CONFIG.get(guild.id)
         self.role_id = config["service_role"] if config else None
 
-    @discord.ui.button(label="Szolgálatba áll", emoji="🍔", style=discord.ButtonStyle.success)
-    async def start_service(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _check_guild(self, interaction):
         if interaction.guild != self.guild:
             await interaction.response.send_message("❌ Ez a gomb nem érvényes itt.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Szolgálatba áll", emoji="🍔", style=discord.ButtonStyle.success)
+    async def start_service(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._check_guild(interaction):
             return
         member = interaction.user
         role = interaction.guild.get_role(self.role_id)
@@ -97,8 +102,7 @@ class ServiceView(discord.ui.View):
 
     @discord.ui.button(label="Szolgálat leadása", emoji="🍔", style=discord.ButtonStyle.danger)
     async def stop_service(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.guild != self.guild:
-            await interaction.response.send_message("❌ Ez a gomb nem érvényes itt.", ephemeral=True)
+        if not await self._check_guild(interaction):
             return
         member = interaction.user
         role = interaction.guild.get_role(self.role_id)
@@ -121,9 +125,9 @@ class ServiceView(discord.ui.View):
 async def on_ready():
     print("Bot online:", bot.user)
 
-# ===== REG =====
+# ===== REG PARANCS =====
 @bot.command()
-async def reg(ctx, vezeteknev:str, keresztnev:str):
+async def reg(ctx, vezeteknev: str, keresztnev: str):
     try:
         new = f"{ctx.author.name} // {vezeteknev} {keresztnev}"
         await ctx.author.edit(nick=new)
@@ -131,11 +135,11 @@ async def reg(ctx, vezeteknev:str, keresztnev:str):
     except Exception as e:
         await ctx.send(f"Hiba: {e}")
 
-# ===== PANEL PARANCS =====
+# ===== SZOLIPANEL PARANCS =====
 @bot.command()
 async def szolipanel(ctx):
     embed = discord.Embed(title="🍔 Szolgálati Panel", description="Használd a gombokat", color=discord.Color.blurple())
-    view = ServiceView(ctx.guild)  # Panel mindig a parancsot kiadó guildhez
+    view = ServiceView(ctx.guild)  # Panel mindig abba a guild-be kerül, ahol kiadták
     await ctx.send(embed=embed, view=view)
 
 # ===== LISTA =====
