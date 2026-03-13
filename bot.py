@@ -27,7 +27,8 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ===== GUILD SPECIFIC CONFIG (log és szerepkör) =====
+# ===== GUILD SPECIFIC CONFIG =====
+# Csak a log csatorna és a szolgálati szerepkör ID-k, a panel mindig a parancsot kiadó csatornába megy
 GUILDS = {
     111111111111111111: {  # Első Discord
         "log_channel": 1458925615989260319,
@@ -88,7 +89,7 @@ class ServiceView(discord.ui.View):
             return
         await member.add_roles(role)
 
-        uid = f"{interaction.guild.id}_{member.id}"  # Guild ID-t is hozzáadjuk
+        uid = f"{interaction.guild.id}_{member.id}"
         duty_logs.setdefault(uid, {})["start"] = time.time()
         save_logs()
 
@@ -136,7 +137,7 @@ async def szolipanel(ctx):
     log_channel_id = config["log_channel"]
 
     embed = discord.Embed(title="🍔 Szolgálati Panel", description="Használd a gombokat", color=discord.Color.blurple())
-    # 🔹 A panel mindig oda kerül, ahol kiadják, nem fix csatornába!
+    # 🔹 A panel CSAK abba a csatornába kerül, ahol kiadták a parancsot
     view = ServiceView(guild, role_id, log_channel_id)
     await ctx.send(embed=embed, view=view)
 
