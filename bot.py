@@ -27,30 +27,29 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ===== GUILD SPECIFIC CONFIG =====
-# Csak a log csatorna és a szolgálati szerepkör ID-k, a panel mindig a parancsot kiadó csatornába megy
-GUILDS = {
-    111111111111111111: {  # Első Discord
-        "log_channel": 1458925615989260319,
-        "service_role": 1472388518914428928
-    },
-    222222222222222222: {  # Második Discord
-        "log_channel": 1482119191812116651,
-        "service_role": 1482120925687316641
-    }
-}
+# ===== JSON FILES =====
+DUTY_FILE = "duty_logs.json"
+CONFIG_FILE = "guild_config.json"
 
-# ===== JSON =====
-FILENAME = "duty_logs.json"
-if os.path.exists(FILENAME):
-    with open(FILENAME,"r") as f:
+if os.path.exists(DUTY_FILE):
+    with open(DUTY_FILE, "r") as f:
         duty_logs = json.load(f)
 else:
     duty_logs = {}
 
+if os.path.exists(CONFIG_FILE):
+    with open(CONFIG_FILE, "r") as f:
+        GUILDS = json.load(f)
+else:
+    GUILDS = {}
+
 def save_logs():
-    with open(FILENAME,"w") as f:
+    with open(DUTY_FILE,"w") as f:
         json.dump(duty_logs,f)
+
+def save_config():
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(GUILDS, f)
 
 def format_time(minutes):
     minutes = int(minutes)
@@ -124,21 +123,31 @@ class ServiceView(discord.ui.View):
 async def on_ready():
     print("Bot online:", bot.user)
 
+# ===== GUILD CONFIG PARANCS =====
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def config(ctx, log_channel: discord.TextChannel, role: discord.Role):
+    GUILDS[ctx.guild.id] = {
+        "log_channel": log_channel.id,
+        "service_role": role.id
+    }
+    save_config()
+    await ctx.send(f"✅ Konfigurálva a guild: {ctx.guild.name}\nLog csatorna: {log_channel.mention}\nSzerepkör: {role.mention}")
+
 # ===== SZOLIPANEL PARANCS =====
 @bot.command()
 async def szolipanel(ctx):
-    guild = ctx.guild
-    config = GUILDS.get(guild.id)
+    guild_id = str(ctx.guild.id)
+    config = GUILDS.get(ctx.guild.id)
     if not config:
-        await ctx.send("❌ Ez a guild nincs konfigurálva a bot számára!")
+        await ctx.send("❌ Ez a guild nincs konfigurálva a bot számára! Használd az `!config` parancsot.")
         return
 
     role_id = config["service_role"]
     log_channel_id = config["log_channel"]
 
     embed = discord.Embed(title="🍔 Szolgálati Panel", description="Használd a gombokat", color=discord.Color.blurple())
-    # 🔹 A panel CSAK abba a csatornába kerül, ahol kiadták a parancsot
-    view = ServiceView(guild, role_id, log_channel_id)
+    view = ServiceView(ctx.guild, role_id, log_channel_id)
     await ctx.send(embed=embed, view=view)
 
 # ===== LISTA =====
@@ -152,7 +161,7 @@ async def list_all(ctx, action=None):
     for uid, data in duty_logs.items():
         guild_id, user_id = uid.split("_")
         if int(guild_id) != ctx.guild.id:
-            continue  # Csak az aktuális guild felhasználóit listázzuk
+            continue
         t = data.get("total", 0)
         if t > 0:
             try:
