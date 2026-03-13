@@ -71,16 +71,16 @@ async def send_log(guild, embed):
 # ===== PANEL =====
 class ServiceView(discord.ui.View):
 
-    def __init__(self, guild_id):
+    def __init__(self, guild):
         super().__init__(timeout=None)
-        self.guild_id = guild_id
-        config = GUILD_CONFIG.get(guild_id)
+        self.guild = guild
+        config = GUILD_CONFIG.get(guild.id)
         self.role_id = config["service_role"] if config else None
 
     @discord.ui.button(label="Szolgálatba áll", emoji="🍔", style=discord.ButtonStyle.success)
     async def start_service(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.guild.id != self.guild_id:
-            await interaction.response.send_message("❌ Ez a gomb nem érvényes ezen a szerveren.", ephemeral=True)
+        if interaction.guild != self.guild:
+            await interaction.response.send_message("❌ Ez a gomb nem érvényes itt.", ephemeral=True)
             return
         member = interaction.user
         role = interaction.guild.get_role(self.role_id)
@@ -97,8 +97,8 @@ class ServiceView(discord.ui.View):
 
     @discord.ui.button(label="Szolgálat leadása", emoji="🍔", style=discord.ButtonStyle.danger)
     async def stop_service(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.guild.id != self.guild_id:
-            await interaction.response.send_message("❌ Ez a gomb nem érvényes ezen a szerveren.", ephemeral=True)
+        if interaction.guild != self.guild:
+            await interaction.response.send_message("❌ Ez a gomb nem érvényes itt.", ephemeral=True)
             return
         member = interaction.user
         role = interaction.guild.get_role(self.role_id)
@@ -134,11 +134,8 @@ async def reg(ctx, vezeteknev:str, keresztnev:str):
 # ===== PANEL PARANCS =====
 @bot.command()
 async def szolipanel(ctx):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell")
-        return
     embed = discord.Embed(title="🍔 Szolgálati Panel", description="Használd a gombokat", color=discord.Color.blurple())
-    view = ServiceView(ctx.guild.id)  # guild-specifikus View
+    view = ServiceView(ctx.guild)  # Panel mindig a parancsot kiadó guildhez
     await ctx.send(embed=embed, view=view)
 
 # ===== LISTA =====
