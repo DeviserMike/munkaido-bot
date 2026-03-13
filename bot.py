@@ -27,17 +27,18 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ===== SZERVER LOG CSATORNÁK =====
-# IDE ÍRD A SZERVER ID-KET
-LOG_CHANNELS = {
-    111111111111111111: 1458925615989260319,  # első discord
-    222222222222222222: 1482119191812116651   # második discord
-}
-
-# ===== SZERVER SPECIFIKUS SZOLGÁLATI SZEREPKÖR =====
-SERVICE_ROLES = {
-    111111111111111111: 1472388518914428928,  # első discord
-    222222222222222222: 1482120925687316641   # második discord
+# ===== SZERVER SPECIFIKÁCIÓ =====
+# minden guild-hez külön log csatorna és szolgálati szerepkör
+GUILD_CONFIG = {
+    111111111111111111: {  # első Discord
+        "log_channel": 1458925615989260319,
+        "service_role": 1472388518914428928
+    },
+    222222222222222222: {  # második Discord
+        "log_channel": 1482119191812116651,
+        "service_role": 1482120925687316641
+    }
+    # ide lehet további szervereket hozzáadni
 }
 
 # ===== JSON =====
@@ -57,45 +58,33 @@ def format_time(minutes):
     minutes=int(minutes)
     return f"{minutes//60}h {minutes%60}m"
 
-def parse_time(value):
-    value=value.lower().replace(",",".")
-    total=0
-    parts=value.split()
-    for p in parts:
-        if p.endswith("h"):
-            total+=float(p[:-1])*60
-        elif p.endswith("m"):
-            total+=float(p[:-1])
-        else:
-            total+=float(p)
-    return total
-
 def is_admin(ctx):
     return ctx.author.guild_permissions.administrator
 
 # ===== LOG FUNKCIÓ =====
-async def send_log(guild,embed):
-    log_id=LOG_CHANNELS.get(guild.id)
-    if not log_id:
+async def send_log(guild, embed):
+    config = GUILD_CONFIG.get(guild.id)
+    if not config:
         return
-    channel=guild.get_channel(log_id)
+    channel = guild.get_channel(config["log_channel"])
     if channel:
         await channel.send(embed=embed)
 
 # ===== PANEL =====
 class ServiceView(discord.ui.View):
 
-    def __init__(self):
+    def __init__(self, guild_id=None):
         super().__init__(timeout=None)
+        self.guild_id = guild_id  # ha szükséges, később lehet hivatkozni
 
-    @discord.ui.button(label="Szolgálatba áll", emoji="🍔", style=discord.ButtonStyle.success, custom_id="start_service")
+    @discord.ui.button(label="Szolgálatba áll", emoji="🍔", style=discord.ButtonStyle.success)
     async def start_service(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.user
-        role_id = SERVICE_ROLES.get(interaction.guild.id)
-        if not role_id:
+        config = GUILD_CONFIG.get(interaction.guild.id)
+        if not config:
             await interaction.response.send_message("❌ Szerepkör nincs beállítva ehhez a szerverhez.", ephemeral=True)
             return
-        role = interaction.guild.get_role(role_id)
+        role = interaction.guild.get_role(config["service_role"])
         if role in member.roles:
             await interaction.response.send_message("❌ Már szolgálatban vagy.", ephemeral=True)
             return
@@ -113,14 +102,14 @@ class ServiceView(discord.ui.View):
         await send_log(interaction.guild, embed)
         await interaction.response.send_message("🍔 Szolgálatba álltál!", ephemeral=True)
 
-    @discord.ui.button(label="Szolgálat leadása", emoji="🍔", style=discord.ButtonStyle.danger, custom_id="stop_service")
+    @discord.ui.button(label="Szolgálat leadása", emoji="🍔", style=discord.ButtonStyle.danger)
     async def stop_service(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.user
-        role_id = SERVICE_ROLES.get(interaction.guild.id)
-        if not role_id:
+        config = GUILD_CONFIG.get(interaction.guild.id)
+        if not config:
             await interaction.response.send_message("❌ Szerepkör nincs beállítva ehhez a szerverhez.", ephemeral=True)
             return
-        role = interaction.guild.get_role(role_id)
+        role = interaction.guild.get_role(config["service_role"])
         if role not in member.roles:
             await interaction.response.send_message("❌ Nem vagy szolgálatban.", ephemeral=True)
             return
@@ -146,7 +135,6 @@ class ServiceView(discord.ui.View):
 @bot.event
 async def on_ready():
     print("Bot online:", bot.user)
-    bot.add_view(ServiceView())
 
 # ===== REG =====
 @bot.command()
@@ -170,7 +158,8 @@ async def szolipanel(ctx):
         description="Használd a gombokat",
         color=discord.Color.blurple()
     )
-    await ctx.send(embed=embed, view=ServiceView())
+    # minden panel küldésekor guild-specifikus ServiceView
+    await ctx.send(embed=embed, view=ServiceView(guild_id=ctx.guild.id))
 
 # ===== LISTA =====
 @bot.command(name="list")
