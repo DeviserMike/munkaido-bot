@@ -20,293 +20,232 @@ Thread(target=run).start()
 
 # ===== BOT =====
 TOKEN = os.environ.get("DISCORD_TOKEN")
-if not TOKEN:
-    raise ValueError("DISCORD_TOKEN nincs beállítva!")
 
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ===== SZOLGÁLATI BEÁLLÍTÁSOK =====
-SERVICE_CHANNEL_ID = 1472701012329500906
-SERVICE_ROLE_ID = 1472388518914428928
-LOG_CHANNEL_ID = 1472403885246255175
+# ===== SZERVER LOG CSATORNÁK =====
+# IDE ÍRD A SZERVER ID-KET
+LOG_CHANNELS = {
+    111111111111111111: 1458925615989260319,  # első discord
+    222222222222222222: 1482119191812116651   # második discord
+}
 
-# ===== JSON FÁJL =====
+SERVICE_ROLE_ID = 1472388518914428928
+
+# ===== JSON =====
 FILENAME = "duty_logs.json"
+
 if os.path.exists(FILENAME):
-    with open(FILENAME, "r") as f:
+    with open(FILENAME,"r") as f:
         duty_logs = json.load(f)
 else:
     duty_logs = {}
 
-# ===== SEGÉDFÜGGVÉNYEK =====
 def save_logs():
-    with open(FILENAME, "w") as f:
-        json.dump(duty_logs, f)
+    with open(FILENAME,"w") as f:
+        json.dump(duty_logs,f)
 
-def format_time(total_minutes):
-    total_minutes = int(total_minutes)
-    return f"{total_minutes // 60}h {total_minutes % 60}m"
+def format_time(minutes):
+    minutes=int(minutes)
+    return f"{minutes//60}h {minutes%60}m"
+
+def parse_time(value):
+    value=value.lower().replace(",",".")
+    total=0
+    parts=value.split()
+
+    for p in parts:
+
+        if p.endswith("h"):
+            total+=float(p[:-1])*60
+
+        elif p.endswith("m"):
+            total+=float(p[:-1])
+
+        else:
+            total+=float(p)
+
+    return total
 
 def is_admin(ctx):
     return ctx.author.guild_permissions.administrator
 
-def parse_time(value: str):
-    value = value.lower().replace(",", ".")
-    total_minutes = 0
-    parts = value.split()
-    for part in parts:
-        if part.endswith("h"):
-            total_minutes += float(part[:-1]) * 60
-        elif part.endswith("m"):
-            total_minutes += float(part[:-1])
-        else:
-            total_minutes += float(part)
-    return total_minutes
+# ===== LOG FUNKCIÓ =====
+async def send_log(guild,embed):
 
-# ===== SZOLGÁLATI PANEL VIEW =====
+    log_id=LOG_CHANNELS.get(guild.id)
+
+    if not log_id:
+        return
+
+    channel=guild.get_channel(log_id)
+
+    if channel:
+        await channel.send(embed=embed)
+
+# ===== PANEL =====
 class ServiceView(discord.ui.View):
+
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Szolgálatba áll", emoji="🍔", style=discord.ButtonStyle.success, custom_id="start_service")
-    async def start_service(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = interaction.user
-        role = interaction.guild.get_role(SERVICE_ROLE_ID)
+    @discord.ui.button(label="Szolgálatba áll",emoji="🍔",style=discord.ButtonStyle.success,custom_id="start_service")
+    async def start_service(self,interaction:discord.Interaction,button:discord.ui.Button):
+
+        member=interaction.user
+        role=interaction.guild.get_role(SERVICE_ROLE_ID)
+
         if role in member.roles:
-            await interaction.response.send_message("❌ Már szolgálatban vagy.", ephemeral=True)
+            await interaction.response.send_message("❌ Már szolgálatban vagy.",ephemeral=True)
             return
+
         await member.add_roles(role)
 
-        uid = str(member.id)
-        duty_logs.setdefault(uid, {})
-        duty_logs[uid]["start"] = time.time()
+        uid=str(member.id)
+
+        duty_logs.setdefault(uid,{})
+        duty_logs[uid]["start"]=time.time()
+
         save_logs()
 
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            embed = discord.Embed(description=f"🟢 {member.mention} szolgálatba állt!", color=discord.Color.green())
-            await log_channel.send(embed=embed)
+        embed=discord.Embed(
+            description=f"🟢 {member.mention} szolgálatba állt!",
+            color=discord.Color.green()
+        )
 
-        await interaction.response.send_message("🍔 Szolgálatba álltál!", ephemeral=True)
+        await send_log(interaction.guild,embed)
 
-    @discord.ui.button(label="Szolgálat leadása", emoji="🍔", style=discord.ButtonStyle.danger, custom_id="stop_service")
-    async def stop_service(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = interaction.user
-        role = interaction.guild.get_role(SERVICE_ROLE_ID)
+        await interaction.response.send_message("🍔 Szolgálatba álltál!",ephemeral=True)
+
+    @discord.ui.button(label="Szolgálat leadása",emoji="🍔",style=discord.ButtonStyle.danger,custom_id="stop_service")
+    async def stop_service(self,interaction:discord.Interaction,button:discord.ui.Button):
+
+        member=interaction.user
+        role=interaction.guild.get_role(SERVICE_ROLE_ID)
+
         if role not in member.roles:
-            await interaction.response.send_message("❌ Nem vagy szolgálatban.", ephemeral=True)
+            await interaction.response.send_message("❌ Nem vagy szolgálatban.",ephemeral=True)
             return
+
         await member.remove_roles(role)
 
-        uid = str(member.id)
+        uid=str(member.id)
+
         if uid in duty_logs and "start" in duty_logs[uid]:
-            worked = (time.time() - duty_logs[uid]["start"]) / 60
-            duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
+
+            worked=(time.time()-duty_logs[uid]["start"])/60
+
+            duty_logs[uid]["total"]=duty_logs[uid].get("total",0)+worked
+
             duty_logs[uid].pop("start")
+
             save_logs()
+
         else:
-            worked = 0
 
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            embed = discord.Embed(description=f"🛑 {member.mention} leadta a szolgálatot!\n⏱ Ledolgozott idő: {format_time(worked)}", color=discord.Color.orange())
-            await log_channel.send(embed=embed)
+            worked=0
 
-        await interaction.response.send_message(f"🍔 Szolgálat leadva! Ledolgozott idő: {format_time(worked)}", ephemeral=True)
+        embed=discord.Embed(
+            description=f"🛑 {member.mention} leadta a szolgálatot!\n⏱ {format_time(worked)}",
+            color=discord.Color.orange()
+        )
 
-# ===== BOT READY =====
+        await send_log(interaction.guild,embed)
+
+        await interaction.response.send_message(f"🍔 Szolgálat leadva! {format_time(worked)}",ephemeral=True)
+
+# ===== READY =====
 @bot.event
 async def on_ready():
-    print(f"Bot csatlakozott: {bot.user} ({bot.user.id})")
+
+    print("Bot online:",bot.user)
+
     bot.add_view(ServiceView())
 
-# ===== REGISZTRÁCIÓ =====
-@bot.command(name="reg")
-async def reg(ctx, vezeteknev: str, keresztnev: str):
+# ===== REG =====
+@bot.command()
+async def reg(ctx,vezeteknev:str,keresztnev:str):
+
     try:
-        new_name = f"{ctx.author.name} // {vezeteknev} {keresztnev}"
-        await ctx.author.edit(nick=new_name)
-        await ctx.send(f"✅ Sikeresen átírva a neved: **{new_name}**")
+
+        new=f"{ctx.author.name} // {vezeteknev} {keresztnev}"
+
+        await ctx.author.edit(nick=new)
+
+        await ctx.send(f"✅ Neved átírva: {new}")
+
     except Exception as e:
-        await ctx.send(f"⛔ Hiba: {e}")
 
-# ===== SZOLGÁLATI PANEL =====
-@bot.command(name="szolipanel")
+        await ctx.send(f"Hiba: {e}")
+
+# ===== PANEL PARANCS =====
+@bot.command()
 async def szolipanel(ctx):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell.")
-        return
-    try:
-        channel = await bot.fetch_channel(SERVICE_CHANNEL_ID)
-    except:
-        await ctx.send("❌ Nem találom a csatornát.")
-        return
-    embed = discord.Embed(title="🍔 Szolgálati Panel", description="Nyomj a gombokra a szolgálat kezeléséhez:", color=discord.Color.blurple())
-    await channel.send(embed=embed, view=ServiceView())
-    await ctx.send("✅ Panel kirakva.")
 
-# ===== SZOLGÁLATBAN LÉVŐK =====
-@bot.command(name="szoli")
-async def szoli(ctx):
     if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell.")
+        await ctx.send("⛔ Admin jog kell")
         return
-    role = ctx.guild.get_role(SERVICE_ROLE_ID)
-    embed = discord.Embed(title="🍔 Szolgálatban lévők", color=discord.Color.green())
-    if not role or len(role.members) == 0:
-        embed.description = "Senki nincs szolgálatban. Mindenki lusta g*ci..."
-    else:
-        for member in role.members:
-            embed.add_field(name=member.display_name, value="Szolgálatban", inline=True)
-    await ctx.send(embed=embed)
 
-# ===== IDŐ HOZZÁADÁS / LEVONÁS =====
-@bot.command(name="hozzaad")
-async def hozzaad(ctx, member: discord.Member, *, amount: str):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell.")
-        return
-    minutes = parse_time(amount)
-    uid = str(member.id)
-    duty_logs.setdefault(uid, {})
-    duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + minutes
-    save_logs()
-    embed = discord.Embed(description=f"➕ Hozzáadva: {member.mention} ({format_time(minutes)})", color=discord.Color.green())
-    await ctx.send(embed=embed)
+    embed=discord.Embed(
+        title="🍔 Szolgálati Panel",
+        description="Használd a gombokat",
+        color=discord.Color.blurple()
+    )
 
-@bot.command(name="levon")
-async def levon(ctx, member: discord.Member, *, amount: str):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell.")
-        return
-    minutes = parse_time(amount)
-    uid = str(member.id)
-    duty_logs.setdefault(uid, {})
-    duty_logs[uid]["total"] = max(0, duty_logs[uid].get("total", 0) - minutes)
-    save_logs()
-    embed = discord.Embed(description=f"➖ Levonva: {member.mention} ({format_time(minutes)})", color=discord.Color.red())
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed,view=ServiceView())
 
-# ===== LISTA ÉS FIZETÉS =====
+# ===== LISTA =====
 @bot.command(name="list")
-async def list_all(ctx, action: str = None):
-    if action != "all":
-        await ctx.send("Használat: `!list all`")
+async def list_all(ctx,action=None):
+
+    if action!="all":
+        await ctx.send("Használat: !list all")
         return
 
-    user_times = []
-    total_worked = 0
-    for uid, data in duty_logs.items():
-        total = data.get("total", 0)
-        if total > 0:
+    user_times=[]
+    total=0
+
+    for uid,data in duty_logs.items():
+
+        t=data.get("total",0)
+
+        if t>0:
+
             try:
-                member = await ctx.guild.fetch_member(int(uid))
-                name = member.display_name
+
+                member=await ctx.guild.fetch_member(int(uid))
+                name=member.display_name
+
             except:
-                name = f"User {uid}"
-            user_times.append((name, total))
-            total_worked += total
+
+                name=uid
+
+            user_times.append((name,t))
+            total+=t
 
     if not user_times:
-        await ctx.send("📋 Nincs rögzített munkaidő.")
+        await ctx.send("Nincs adat")
         return
 
-    description_text = ""
-    for idx, (name, total_minutes) in enumerate(user_times, start=1):
-        description_text += f"**{idx}. {name}** - {format_time(total_minutes)}\n"
+    desc=""
 
-    embed = discord.Embed(title="📋 Munkaidő Lista", description=description_text, color=discord.Color.blurple())
+    for i,(name,t) in enumerate(user_times,1):
+
+        desc+=f"{i}. {name} - {format_time(t)}\n"
+
+    embed=discord.Embed(
+        title="Munkaidő lista",
+        description=desc,
+        color=discord.Color.blurple()
+    )
+
     await ctx.send(embed=embed)
 
-    await ctx.send(f"⏱ **Összesen mindenki ledolgozott idő:** {format_time(total_worked)}")
+    await ctx.send(f"Összes idő: {format_time(total)}")
 
-    await ctx.send(f"{ctx.author.mention}, írd be a mai órabért $-ban (pl. 15):")
-    def check(m):
-        return m.author == ctx.author and m.channel == ctx.channel
-    try:
-        msg = await bot.wait_for("message", check=check, timeout=60)
-        rate = float(msg.content)
-    except:
-        await ctx.send("⛔ Érvénytelen szám vagy lejárt az idő.")
-        return
-
-    payment_embed = discord.Embed(title="💵 Fizetés lista", color=discord.Color.gold())
-    for name, total_minutes in user_times:
-        hours = total_minutes / 60
-        pay = round(hours * rate)
-        payment_embed.add_field(name=name, value=f"${pay}", inline=False)
-    payment_embed.set_footer(text=f"Összes ledolgozott idő: {format_time(total_worked)}")
-    await ctx.send(embed=payment_embed)
-
-# ===== FORCE KEZD / VEGE =====
-@bot.command(name="forcekezd")
-async def forcekezd(ctx, member: discord.Member):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell.")
-        return
-    uid = str(member.id)
-    duty_logs.setdefault(uid, {})
-    if "start" in duty_logs[uid]:
-        await ctx.send(f"❌ {member.mention} már műszakban van.")
-        return
-    duty_logs[uid]["start"] = time.time()
-    save_logs()
-    embed = discord.Embed(description=f"🟢 Admin elindította a műszakot: {member.mention}", color=discord.Color.green())
-    await ctx.send(embed=embed)
-
-@bot.command(name="forcevege")
-async def forcevege(ctx, member: discord.Member = None, action: str = None):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell.")
-        return
-    if action == "all":
-        messages = []
-        for uid, data in duty_logs.items():
-            if "start" in data:
-                member_id = int(uid)
-                try:
-                    member_obj = await ctx.guild.fetch_member(member_id)
-                    worked = (time.time() - data["start"]) / 60
-                    data["total"] = data.get("total", 0) + worked
-                    data.pop("start")
-                    messages.append(f"🛑 {member_obj.mention} műszak lezárva! Ledolgozott idő: {format_time(worked)}")
-                except:
-                    continue
-        save_logs()
-        await ctx.send("\n".join(messages) if messages else "Senki nincs műszakban.")
-        return
-
-    if not member:
-        await ctx.send("Használat: `!forcevege @user` vagy `!forcevege all`")
-        return
-
-    uid = str(member.id)
-    if uid not in duty_logs or "start" not in duty_logs[uid]:
-        await ctx.send(f"❌ {member.mention} nincs aktív műszakban.")
-        return
-
-    worked = (time.time() - duty_logs[uid]["start"]) / 60
-    duty_logs[uid]["total"] = duty_logs[uid].get("total", 0) + worked
-    duty_logs[uid].pop("start")
-    save_logs()
-    embed = discord.Embed(description=f"🛑 Admin lezárta a műszakot: {member.mention}\n⏱ Ledolgozott idő: {format_time(worked)}", color=discord.Color.orange())
-    await ctx.send(embed=embed)
-
-# ===== DELETE ALL =====
-@bot.command(name="delete")
-async def delete(ctx, action: str = None):
-    if not is_admin(ctx):
-        await ctx.send("⛔ Admin jog kell.")
-        return
-    if action != "all":
-        await ctx.send("Használat: `!delete all`")
-        return
-    duty_logs.clear()
-    save_logs()
-    await ctx.send("🧹 **Minden felhasználó munkaideje törölve lett.**")
-
-# ===== BOT INDÍTÁS =====
+# ===== BOT START =====
 bot.run(TOKEN)
