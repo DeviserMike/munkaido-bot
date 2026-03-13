@@ -146,10 +146,15 @@ async def szolipanel(ctx):
     role_id = config["service_role"]
     log_channel_id = config["log_channel"]
 
+    # 🔹 Megkeressük a "🕒munkaidő" nevű csatornát a guildban
+    target_channel = discord.utils.get(ctx.guild.text_channels, name="🕒munkaidő")
+    if not target_channel:
+        await ctx.send("❌ Nem található a 🕒munkaidő csatorna!")
+        return
+
     embed = discord.Embed(title="🍔 Szolgálati Panel", description="Használd a gombokat", color=discord.Color.blurple())
     view = ServiceView(ctx.guild, role_id, log_channel_id)
-    await ctx.send(embed=embed, view=view)
-
+    await target_channel.send(embed=embed, view=view)  # 🔹 ide küldjük a panelt
 # ===== LISTA =====
 @bot.command(name="list")
 async def list_all(ctx, action=None):
